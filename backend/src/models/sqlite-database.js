@@ -79,6 +79,7 @@ class Database {
           failedAttempts INTEGER DEFAULT 0,
           lockUntil DATETIME,
           lastVisit DATETIME,
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (partnerId) REFERENCES partner(partnerId)
         );
 
@@ -91,6 +92,10 @@ class Database {
           payAmount DECIMAL(10,2),
           taxAmount DECIMAL(10,2),
           publishedAt DATETIME,
+            fileName TEXT,
+            originalName TEXT,
+            uploadedAt DATETIME,
+            fileSize INTEGER,
           FOREIGN KEY (partnerId) REFERENCES partner(partnerId)
         );
 
@@ -309,9 +314,9 @@ class Database {
   // Метод для получения всех партнеров (для админки)
   async getAllPartners() {
     return this.all(`
-      SELECT p.partnerId as Inc, p.name as Name, p.email as Email, '' as Telegram, 
+      SELECT p.partnerId as Inc, p.name as Name, p.email as Email, p.telegram as Telegram, 
              p.createdAt as CreatedAt, 1 as IsActive,
-             pp.alias as Alias, pp.active as PasswordSet, pp.lastVisit as LastVisit
+             pp.alias as Alias, CASE WHEN pp.pswHash IS NOT NULL THEN 1 ELSE 0 END as PasswordSet, pp.lastVisit as LastVisit
       FROM partner p
       LEFT JOIN partpass pp ON p.partnerId = pp.partnerId
       ORDER BY p.createdAt DESC
@@ -355,7 +360,7 @@ class Database {
   }
 
   // Метод для создания партнера
-  async createPartner({ name, email, telegram, alias }) {
+  async createPartner({ name, email, telegram, alias, password }) {
     const transaction = await this.beginTransaction();
     
     try {
@@ -385,17 +390,26 @@ class Database {
       
       // Создаем запись партнера
       const partnerResult = await this.run(`
-        INSERT INTO partner (name, email, createdAt)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-      `, [name, email]);
+        INSERT INTO partner (name, email, telegram, createdAt)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `, [name, email, telegram || null]);
       
       const partnerId = partnerResult.lastID;
       
+      // Хэшируем пароль если указан, иначе генерируем случайный
+      let pswHash = null;
+      let finalPassword = password;
+      if (!password) {
+        // Генерируем случайный пароль
+        finalPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+      }
+      pswHash = await bcrypt.hash(finalPassword, 12);
+      
       // Создаем запись для авторизации
       await this.run(`
-        INSERT INTO partpass (partnerId, alias, active, createdAt)
-        VALUES (?, ?, 0, CURRENT_TIMESTAMP)
-      `, [partnerId, finalAlias]);
+        INSERT INTO partpass (partnerId, alias, pswHash, active, createdAt)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `, [partnerId, finalAlias, pswHash, password ? 1 : 0]);
       
       await this.commit();
       
@@ -404,7 +418,8 @@ class Database {
         alias: finalAlias,
         name,
         email,
-        telegram: telegram || null
+        telegram: telegram || null,
+        password: finalPassword
       };
       
     } catch (error) {
@@ -419,6 +434,91 @@ class Database {
       INSERT OR REPLACE INTO password_reset_tokens (partnerId, token, expireAt, createdAt)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
     `, [partnerId, token, expireAt.toISOString()]);
+  }
+
+  // Метод для обновления партнера
+  async updatePartner(partnerId, { name, email, telegram, alias, password }) {
+    const transaction = await this.beginTransaction();
+    
+    try {
+      // Проверяем уникальность email (кроме текущего партнера)
+      const existingEmail = await this.get('SELECT partnerId FROM partner WHERE email = ? AND partnerId != ?', [email, partnerId]);
+      if (existingEmail) {
+        throw new Error('Партнер с таким email уже существует');
+      }
+      
+      // Проверяем уникальность алиаса (кроме текущего партнера)
+      const existingAlias = await this.get('SELECT partnerId FROM partpass WHERE alias = ? AND partnerId != ?', [alias, partnerId]);
+      if (existingAlias) {
+        throw new Error('Партнер с таким логином уже существует');
+      }
+      
+      // Обновляем данные партнера
+      await this.run(`
+        UPDATE partner SET name = ?, email = ?, telegram = ? WHERE partnerId = ?
+      `, [name, email, telegram || null, partnerId]);
+      
+      // Обновляем алиас
+      await this.run(`
+        UPDATE partpass SET alias = ? WHERE partnerId = ?
+      `, [alias, partnerId]);
+      
+      // Обновляем пароль если указан
+      if (password) {
+        const pswHash = await bcrypt.hash(password, 12);
+        await this.run(`
+          UPDATE partpass SET pswHash = ?, active = 1 WHERE partnerId = ?
+        `, [pswHash, partnerId]);
+      }
+      
+      await this.commit();
+      
+      return {
+        partnerId,
+        name,
+        email,
+        telegram,
+        alias
+      };
+      
+    } catch (error) {
+      await this.rollback();
+      throw error;
+    }
+  }
+
+  // Метод для удаления партнера
+  async deletePartner(partnerId) {
+    const transaction = await this.beginTransaction();
+    
+    try {
+      // Удаляем связанные записи
+      await this.run('DELETE FROM password_reset_tokens WHERE partnerId = ?', [partnerId]);
+      await this.run('DELETE FROM auditLog WHERE userId = ? AND userType = ?', [partnerId, 'partner']);
+      await this.run('DELETE FROM document WHERE claimId IN (SELECT inc FROM claim WHERE partnerId = ?)', [partnerId]);
+      await this.run('DELETE FROM claim WHERE partnerId = ?', [partnerId]);
+      await this.run('DELETE FROM partpass WHERE partnerId = ?', [partnerId]);
+      await this.run('DELETE FROM partner WHERE partnerId = ?', [partnerId]);
+      
+      await this.commit();
+      
+    } catch (error) {
+      await this.rollback();
+      throw error;
+    }
+  }
+
+  // Метод для получения документов партнера
+  async getPartnerDocuments(partnerId) {
+    return this.all(`
+      SELECT c.inc, c.dateBeg, c.dateEnd, c.amount, c.payAmount, c.taxAmount, c.publishedAt,
+             c.fileName, c.originalName, c.uploadedAt, c.fileSize,
+             d.filename, d.size, d.mimetype
+      FROM claim c
+      LEFT JOIN document d ON c.inc = d.claimId
+      WHERE c.partnerId = ?
+      ORDER BY c.uploadedAt DESC
+    `, [partnerId]);
   }
 
   // Методы для работы с транзакциями

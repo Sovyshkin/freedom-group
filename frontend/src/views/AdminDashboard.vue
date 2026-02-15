@@ -222,6 +222,7 @@
                 <th>Последний вход</th>
                 <th>Создан</th>
                 <th>Статус</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -242,6 +243,11 @@
                   <span :class="['status', partner.IsActive ? 'active' : 'inactive']">
                     {{ partner.IsActive ? 'Активен' : 'Неактивен' }}
                   </span>
+                </td>
+                <td>
+                  <button @click="editPartner(partner)" class="btn btn-small btn-secondary">Редактировать</button>
+                  <button @click="viewPartnerDocuments(partner)" class="btn btn-small btn-info">Документы</button>
+                  <button @click="deletePartner(partner)" class="btn btn-small btn-danger">Удалить</button>
                 </td>
               </tr>
             </tbody>
@@ -278,6 +284,11 @@
             <label>Логин (опционально)</label>
             <input v-model="newPartner.alias" type="text" placeholder="Будет сгенерирован автоматически" />
           </div>
+          
+          <div class="form-group">
+            <label>Пароль (опционально)</label>
+            <input v-model="newPartner.password" type="password" placeholder="Оставьте пустым для генерации" />
+          </div>
         </form>
         
         <div class="modal-footer">
@@ -287,6 +298,93 @@
           <button @click="createPartner" :disabled="creatingPartner" class="btn btn-primary">
             <i v-if="creatingPartner" class="icon-spinner"></i>
             {{ creatingPartner ? 'Создание...' : 'Создать' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Edit Partner Modal -->
+    <div v-if="showEditPartnerModal" class="modal-overlay" @click.self="showEditPartnerModal = false">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Редактировать партнера</h3>
+          <button @click="showEditPartnerModal = false" class="close-btn">×</button>
+        </div>
+        
+        <form @submit.prevent="updatePartner" class="modal-body">
+          <div class="form-group">
+            <label>Имя партнера *</label>
+            <input v-model="partnerToEdit.name" type="text" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Email *</label>
+            <input v-model="partnerToEdit.email" type="email" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Telegram (опционально)</label>
+            <input v-model="partnerToEdit.telegram" type="text" placeholder="@username или username" />
+          </div>
+          
+          <div class="form-group">
+            <label>Логин</label>
+            <input v-model="partnerToEdit.alias" type="text" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Новый пароль (опционально)</label>
+            <input v-model="partnerToEdit.newPassword" type="password" placeholder="Оставьте пустым, чтобы не менять" />
+          </div>
+        </form>
+        
+        <div class="modal-footer">
+          <button type="button" @click="showEditPartnerModal = false" class="btn btn-secondary">
+            Отмена
+          </button>
+          <button @click="updatePartner" :disabled="editingPartner" class="btn btn-primary">
+            <i v-if="editingPartner" class="icon-spinner"></i>
+            {{ editingPartner ? 'Сохранение...' : 'Сохранить' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Partner Documents Modal -->
+    <div v-if="showPartnerDocumentsModal" class="modal-overlay" @click.self="showPartnerDocumentsModal = false">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h3>Документы партнера: {{ partnerToEdit?.name }}</h3>
+          <button @click="showPartnerDocumentsModal = false" class="close-btn">×</button>
+        </div>
+        
+        <div class="modal-body">
+          <table v-if="partnerDocuments.length > 0" class="documents-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Дата</th>
+                <th>Файл</th>
+                <th>Размер</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="doc in partnerDocuments" :key="doc.inc">
+                <td>{{ doc.inc }}</td>
+                <td>{{ formatDate(doc.uploadedAt) }}</td>
+                <td>{{ doc.filename }}</td>
+                <td>{{ formatFileSize(doc.size) }}</td>
+                <td>{{ doc.publishedAt ? 'Опубликован' : 'Не опубликован' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else>Документы не найдены</p>
+        </div>
+        
+        <div class="modal-footer">
+          <button @click="showPartnerDocumentsModal = false" class="btn btn-secondary">
+            Закрыть
           </button>
         </div>
       </div>
@@ -337,11 +435,17 @@ const partners = ref([])
 const loadingPartners = ref(false)
 const showCreatePartnerModal = ref(false)
 const creatingPartner = ref(false)
+const showEditPartnerModal = ref(false)
+const editingPartner = ref(false)
+const partnerToEdit = ref(null)
+const showPartnerDocumentsModal = ref(false)
+const partnerDocuments = ref([])
 const newPartner = ref({
   name: '',
   email: '',
   telegram: '',
-  alias: ''
+  alias: '',
+  password: ''
 })
 
 // Methods
@@ -535,6 +639,86 @@ const deleteDocument = async (claimId) => {
   }
 }
 
+// Partner management methods
+const editPartner = (partner) => {
+  partnerToEdit.value = { ...partner, newPassword: '' }
+  showEditPartnerModal.value = true
+}
+
+const updatePartner = async () => {
+  editingPartner.value = true
+  try {
+    const updateData = {
+      name: partnerToEdit.value.name,
+      email: partnerToEdit.value.email,
+      telegram: partnerToEdit.value.telegram,
+      alias: partnerToEdit.value.alias
+    }
+    
+    if (partnerToEdit.value.newPassword) {
+      updateData.password = partnerToEdit.value.newPassword
+    }
+    
+    await api.put(`/admin/partners/${partnerToEdit.value.Inc}`, updateData)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Партнер успешно обновлен'
+    })
+    
+    showEditPartnerModal.value = false
+    partnerToEdit.value = null
+    loadPartners()
+    
+  } catch (error) {
+    console.error('Ошибка обновления партнера:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка обновления партнера: ' + (error.response?.data?.message || error.message)
+    })
+  } finally {
+    editingPartner.value = false
+  }
+}
+
+const deletePartner = async (partner) => {
+  if (!confirm(`Вы уверены, что хотите удалить партнера "${partner.Name}"? Это действие нельзя отменить.`)) return
+  
+  try {
+    await api.delete(`/admin/partners/${partner.Inc}`)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Партнер успешно удален'
+    })
+    
+    loadPartners()
+    loadData()
+    
+  } catch (error) {
+    console.error('Ошибка удаления партнера:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка удаления партнера: ' + (error.response?.data?.message || error.message)
+    })
+  }
+}
+
+const viewPartnerDocuments = async (partner) => {
+  partnerToEdit.value = partner
+  try {
+    const response = await api.get(`/admin/partners/${partner.Inc}/documents`)
+    partnerDocuments.value = response.data.documents
+    showPartnerDocumentsModal.value = true
+  } catch (error) {
+    console.error('Ошибка загрузки документов:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки документов партнера'
+    })
+  }
+}
+
 const toggleSelectAll = () => {
   if (selectedClaims.value.length === unpublishedClaims.value.length) {
     selectedClaims.value = []
@@ -562,15 +746,21 @@ const loadPartners = async () => {
 const createPartner = async () => {
   creatingPartner.value = true
   try {
-    await api.post('/admin/partners', newPartner.value)
+    const response = await api.post('/admin/partners', newPartner.value)
+    const partnerData = response.data
+    
+    let message = 'Партнер успешно создан'
+    if (!newPartner.value.alias || !newPartner.value.password) {
+      message += `\nЛогин: ${partnerData.alias}\nПароль: ${partnerData.password}`
+    }
     
     notificationStore.addNotification({
       type: 'success',
-      message: 'Партнер успешно создан'
+      message: message
     })
     
     showCreatePartnerModal.value = false
-    newPartner.value = { name: '', email: '', telegram: '', alias: '' }
+    newPartner.value = { name: '', email: '', telegram: '', alias: '', password: '' }
     loadPartners()
     loadData()
     
@@ -669,17 +859,40 @@ watch(activeTab, handleTabChange)
 
 .stat-card {
   background: white;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 .stat-icon {
-  font-size: 2.5rem;
+  font-size: 3rem;
   opacity: 0.8;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .stat-content {
@@ -687,24 +900,68 @@ watch(activeTab, handleTabChange)
 }
 
 .stat-value {
-  font-size: 1.8rem;
+  font-size: 2.2rem;
   font-weight: 700;
-  color: #2c3e50;
+  color: #334155;
   margin-bottom: 4px;
+  background: linear-gradient(135deg, #334155, #64748b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .stat-label {
-  color: #6c757d;
-  font-size: 0.9rem;
+  color: #64748b;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .tabs {
   display: flex;
   background: white;
-  border-radius: 12px 12px 0 0;
+  border-radius: 16px 16px 0 0;
   margin-bottom: 0;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e2e8f0;
+  border-bottom: none;
+}
+
+.tab {
+  flex: 1;
+  padding: 16px 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  color: #64748b;
+  transition: all 0.3s ease;
+  position: relative;
+  text-align: center;
+}
+
+.tab:hover {
+  color: #334155;
+  background: #f8fafc;
+}
+
+.tab.active {
+  color: #667eea;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  font-weight: 600;
+}
+
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 2px;
 }
 
 .tab {
@@ -820,15 +1077,22 @@ watch(activeTab, handleTabChange)
 }
 
 .remove-btn {
-  background: #dc3545;
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
   color: white;
   border: none;
   border-radius: 50%;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.remove-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(255, 154, 158, 0.4);
 }
 
 .upload-actions {
@@ -884,13 +1148,16 @@ watch(activeTab, handleTabChange)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 30px;
-  border-bottom: 1px solid #e9ecef;
+  padding: 30px;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .section-header h3 {
   margin: 0;
-  color: #2c3e50;
+  color: #334155;
+  font-weight: 600;
+  font-size: 20px;
 }
 
 .actions {
@@ -898,27 +1165,116 @@ watch(activeTab, handleTabChange)
   gap: 12px;
 }
 
+.upload-area {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 60px 40px;
+  text-align: center;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.05), transparent);
+  transition: left 0.5s;
+}
+
+.upload-area:hover::before {
+  left: 100%;
+}
+
+.upload-area:hover {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+}
+
+.upload-area.dragover {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+  transform: scale(1.02);
+}
+
+.upload-content p {
+  color: #64748b;
+  margin: 16px 0;
+  font-size: 16px;
+}
+
+.upload-hint {
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.link-btn {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.link-btn:hover {
+  border-bottom-color: #667eea;
+}
+
 .documents-table,
 .partners-table {
   width: 100%;
   border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
 }
 
 .documents-table th,
 .documents-table td,
 .partners-table th,
 .partners-table td {
-  padding: 12px;
+  padding: 16px 20px;
   text-align: left;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid #f1f5f9;
+  transition: all 0.2s ease;
 }
 
 .documents-table th,
 .partners-table th {
-  background: #f8f9fa;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
   font-weight: 600;
-  color: #495057;
+  color: #334155;
   font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.documents-table tbody tr,
+.partners-table tbody tr {
+  transition: all 0.2s ease;
+}
+
+.documents-table tbody tr:hover,
+.partners-table tbody tr:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.documents-table tbody tr:last-child td,
+.partners-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .action-buttons {
@@ -930,49 +1286,55 @@ watch(activeTab, handleTabChange)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 30px;
-  background: #f8f9fa;
-  border-top: 1px solid #e9ecef;
+  padding: 20px 30px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 12px 12px;
 }
 
 .status {
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: 20px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .status.uploaded {
-  background: #fff3cd;
-  color: #856404;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
 }
 
 .status.published {
-  background: #d4edda;
-  color: #155724;
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
 }
 
 .status.error {
-  background: #f8d7da;
-  color: #721c24;
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #991b1b;
 }
 
 .status.active {
-  background: #d4edda;
-  color: #155724;
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
 }
 
 .status.inactive {
-  background: #f8d7da;
-  color: #721c24;
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #991b1b;
 }
 
 .password-status.set {
-  color: #28a745;
+  color: #10b981;
+  font-weight: 600;
 }
 
 .password-status.not-set {
-  color: #dc3545;
+  color: #ef4444;
+  font-weight: 600;
 }
 
 .modal-overlay {
@@ -981,32 +1343,63 @@ watch(activeTab, handleTabChange)
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
 }
 
 .modal {
   background: white;
-  border-radius: 12px;
+  border-radius: 16px;
   width: 500px;
   max-width: 90vw;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.3s ease-out;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e9ecef;
+  padding: 24px 30px;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .modal-header h3 {
   margin: 0;
+  color: #334155;
+  font-weight: 600;
+  font-size: 18px;
 }
 
 .close-btn {
@@ -1014,112 +1407,193 @@ watch(activeTab, handleTabChange)
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6c757d;
+  color: #64748b;
+  transition: all 0.2s ease;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+  transform: rotate(90deg);
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 30px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  color: #495057;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #334155;
+  font-size: 14px;
 }
 
 .form-group input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
   font-size: 14px;
+  transition: all 0.2s ease;
+  background: #f8fafc;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 20px;
-  border-top: 1px solid #e9ecef;
+  padding: 24px 30px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
 }
 
 .btn {
-  padding: 8px 16px;
+  padding: 10px 20px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.2s;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn:hover::before {
+  left: 100%;
 }
 
 .btn-sm {
-  padding: 4px 8px;
+  padding: 6px 12px;
   font-size: 12px;
+  border-radius: 6px;
 }
 
 .btn-primary {
-  background-color: #1233EA;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   font-family: 'Inter', sans-serif;
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
 .btn-primary:hover {
-  background-color: #0f29d1;
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
 .btn-secondary {
-  background: #6c757d;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   color: white;
+  box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4);
 }
 
 .btn-secondary:hover {
-  background: #545b62;
+  background: linear-gradient(135deg, #e887f7 0%, #e54a60 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.6);
 }
 
 .btn-success {
-  background-color: #1233EA;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   color: white;
   font-family: 'Inter', sans-serif;
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
 }
 
 .btn-success:hover {
-  background-color: #0f29d1;
+  background: linear-gradient(135deg, #3a9be6 0%, #00e0e6 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
 }
 
 .btn-danger {
-  background: #dc3545;
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
   color: white;
+  box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4);
 }
 
 .btn-danger:hover {
-  background: #c82333;
+  background: linear-gradient(135deg, #ff8a8e 0%, #fedfdf 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 154, 158, 0.6);
+}
+
+.btn-info {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  color: #2c3e50;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(168, 237, 234, 0.4);
+}
+
+.btn-info:hover {
+  background: linear-gradient(135deg, #98e0da 0%, #fec6d3 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(168, 237, 234, 0.6);
 }
 
 .btn:disabled {
-  background: #6c757d;
+  background: #e9ecef;
+  color: #6c757d;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
-  color: #6c757d;
+  padding: 80px 40px;
+  color: #64748b;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .empty-icon {
-  font-size: 4rem;
-  margin-bottom: 20px;
-  opacity: 0.5;
+  font-size: 5rem;
+  margin-bottom: 24px;
+  opacity: 0.6;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
 }
 
 /* Icons */
@@ -1167,6 +1641,249 @@ watch(activeTab, handleTabChange)
     width: 100%;
     margin: 20px;
     max-width: calc(100vw - 40px);
+  }
+}
+
+/* Modern animations and effects */
+.tab-content {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stat-card {
+  animation: slideInUp 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+.stat-card:nth-child(1) { animation-delay: 0.1s; }
+.stat-card:nth-child(2) { animation-delay: 0.2s; }
+.stat-card:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.documents-table tbody tr,
+.partners-table tbody tr {
+  animation: fadeInScale 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+.documents-table tbody tr:nth-child(odd),
+.partners-table tbody tr:nth-child(odd) {
+  animation-delay: 0.05s;
+}
+
+.documents-table tbody tr:nth-child(even),
+.partners-table tbody tr:nth-child(even) {
+  animation-delay: 0.1s;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced focus states */
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  background: #f8fafc;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Smooth transitions for all interactive elements */
+.tab,
+.btn,
+.remove-btn,
+.close-btn,
+.form-group input,
+.documents-table tbody tr,
+.partners-table tbody tr,
+.stat-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glass morphism effect for special elements */
+.section-header {
+  backdrop-filter: blur(10px);
+  background: rgba(248, 250, 252, 0.8);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+}
+.btn-small {
+  padding: 8px 16px;
+  font-size: 12px;
+  border-radius: 8px;
+  margin-right: 6px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn-small:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-info {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  color: #2c3e50;
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(168, 237, 234, 0.4);
+}
+
+.btn-info:hover {
+  background: linear-gradient(135deg, #98e0da 0%, #fec6d3 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(168, 237, 234, 0.6);
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+  border: 1px solid #dc3545;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+  border-color: #bd2130;
+}
+
+.modal-large {
+  width: 900px;
+  max-width: 95vw;
+  max-height: 80vh;
+}
+
+.documents-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
+}
+
+.documents-table th,
+.documents-table td {
+  padding: 16px 20px;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+  transition: all 0.2s ease;
+}
+
+.documents-table th {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  font-weight: 600;
+  color: #334155;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.partners-table th:last-child,
+.partners-table td:last-child {
+  width: 220px;
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 16px;
+  }
+  
+  .tabs {
+    flex-direction: column;
+    border-radius: 12px;
+    margin-bottom: 20px;
+  }
+  
+  .tab {
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+    padding: 20px;
+  }
+  
+  .actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+  
+  .upload-area {
+    padding: 40px 20px;
+  }
+  
+  .documents-table,
+  .partners-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    border-radius: 8px;
+  }
+  
+  .bulk-actions {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+    padding: 16px 20px;
+  }
+  
+  .modal {
+    width: 95%;
+    margin: 20px;
+    max-width: calc(100vw - 40px);
+    border-radius: 12px;
+  }
+  
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding: 20px;
+  }
+  
+  .btn {
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+  
+  .stat-card {
+    padding: 20px;
+  }
+  
+  .stat-value {
+    font-size: 2rem;
   }
 }
 </style>

@@ -42,7 +42,7 @@ const corsOptions = {
     ];
     
     // Добавляем локальный IP адрес
-    const localIP = process.env.LOCAL_IP || '172.20.10.5';
+    const localIP = process.env.LOCAL_IP || '192.168.0.102';
     allowedOrigins.push(`http://${localIP}:8080`);
     allowedOrigins.push(`http://${localIP}:8081`);
     
@@ -105,7 +105,7 @@ async function startServer() {
     console.log('✅ База данных инициализирована');
 
     const HOST = process.env.HOST || '0.0.0.0';
-    const LOCAL_IP = process.env.LOCAL_IP || '172.20.10.5';
+    const LOCAL_IP = process.env.LOCAL_IP || '192.168.0.102';
 
     app.listen(PORT, HOST, () => {
       console.log(`🚀 Сервер запущен на ${HOST}:${PORT}`);

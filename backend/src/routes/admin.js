@@ -362,6 +362,78 @@ router.get('/partners', async (req, res, next) => {
   }
 });
 
+// @desc    Обновить партнера
+// @route   PUT /api/admin/partners/:id
+// @access  Admin
+router.put('/partners/:id', [
+  body('name').notEmpty().withMessage('Имя обязательно'),
+  body('email').isEmail().withMessage('Некорректный email'),
+  body('alias').notEmpty().withMessage('Логин обязателен')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ошибки валидации',
+        errors: errors.array()
+      });
+    }
+    
+    const { id } = req.params;
+    const { name, email, telegram, alias, password } = req.body;
+    
+    const updatedPartner = await db.updatePartner(id, { name, email, telegram, alias, password });
+    
+    res.json({
+      success: true,
+      message: 'Партнер обновлен',
+      partner: updatedPartner
+    });
+    
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Удалить партнера
+// @route   DELETE /api/admin/partners/:id
+// @access  Admin
+router.delete('/partners/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    await db.deletePartner(id);
+    
+    res.json({
+      success: true,
+      message: 'Партнер удален'
+    });
+    
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Получить документы партнера
+// @route   GET /api/admin/partners/:id/documents
+// @access  Admin
+router.get('/partners/:id/documents', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const documents = await db.getPartnerDocuments(id);
+    
+    res.json({
+      success: true,
+      documents: documents
+    });
+    
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @desc    Получить статистику администратора
 // @route   GET /api/admin/stats
 // @access  Admin
