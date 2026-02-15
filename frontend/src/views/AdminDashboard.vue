@@ -900,7 +900,7 @@ watch(activeTab, handleTabChange)
 }
 
 .stat-value {
-  font-size: 2.2rem;
+  font-size: 2rem;
   font-weight: 700;
   color: #334155;
   margin-bottom: 4px;
