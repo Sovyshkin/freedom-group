@@ -6,7 +6,7 @@ const getBaseURL = () => {
   
   // Если фронтенд открыт по IP адресу, используем тот же IP для бэкенда
   if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001/api`;
+    return `http://${hostname}/api`;
   }
   
   // Для localhost используем стандартный адрес
