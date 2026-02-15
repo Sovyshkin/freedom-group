@@ -38,13 +38,20 @@ const corsOptions = {
       'http://localhost:8080',
       'http://localhost:8081',
       'http://127.0.0.1:8080',
-      'http://127.0.0.1:8081'
+      'http://127.0.0.1:8081',
+      'http://localhost', // Добавляем localhost без порта
+      'http://127.0.0.1', // Добавляем 127.0.0.1 без порта
     ];
     
-    // Добавляем локальный IP адрес
+    // Добавляем локальный IP адрес с разными портами
     const localIP = process.env.LOCAL_IP || '193.246.162.61';
-    allowedOrigins.push(`http://${localIP}:8080`);
-    allowedOrigins.push(`http://${localIP}:8081`);
+    
+    // Разрешаем запросы с IP на разных портах (включая 80)
+    allowedOrigins.push(`http://${localIP}`);        // для порта 80
+    allowedOrigins.push(`http://${localIP}:80`);    // явное указание порта 80
+    allowedOrigins.push(`http://${localIP}:3000`);  // для разработки
+    allowedOrigins.push(`http://${localIP}:8080`);  // для разработки
+    allowedOrigins.push(`http://${localIP}:8081`);  // для разработки
     
     // В development режиме разрешаем все локальные адреса
     if (process.env.NODE_ENV !== 'production') {
@@ -62,9 +69,12 @@ const corsOptions = {
       }
     }
     
+    // Для отладки - логируем запрещенные origin
+    console.log('❌ Заблокированный origin:', origin);
     callback(new Error('Доступ запрещен CORS policy'));
   },
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 200 // Для старых браузеров
 };
 
 app.use(cors(corsOptions));
