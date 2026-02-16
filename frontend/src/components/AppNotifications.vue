@@ -15,7 +15,7 @@
             class="notification-close" 
             @click="notificationStore.removeNotification(notification.id)"
           >
-            ×
+            <i class="fas fa-times"></i>
           </button>
         </div>
       </div>

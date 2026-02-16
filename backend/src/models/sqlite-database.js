@@ -230,14 +230,14 @@ class Database {
     );
   }
 
-  async getPartnerAuth(alias) {
+  async getPartnerAuth(login) {
     return this.get(`
       SELECT p.partnerId, p.name, p.email, pp.alias, pp.pswHash, pp.active, 
              pp.failedAttempts, pp.lockUntil, pp.lastVisit
       FROM partner p
       JOIN partpass pp ON p.partnerId = pp.partnerId
-      WHERE pp.alias = ?
-    `, [alias]);
+      WHERE pp.alias = ? OR p.email = ?
+    `, [login, login]);
   }
 
   async getPartnerByEmail(email) {
@@ -256,6 +256,47 @@ class Database {
       'UPDATE partpass SET lastVisit = CURRENT_TIMESTAMP WHERE partnerId = ?',
       [partnerId]
     );
+  }
+
+  async getPartnerByInc(inc) {
+    const partner = await this.get('SELECT * FROM partner WHERE partnerId = ?', [inc]);
+    if (partner) {
+      // Добавляем поле Inc для совместимости с кодом
+      partner.Inc = partner.partnerId;
+      partner.Name = partner.name;
+      partner.Email = partner.email;
+      partner.Telegram = partner.telegram;
+      partner.CreatedAt = partner.createdAt;
+      partner.IsActive = 1; // В SQLite нет IsActive, но добавляем для совместимости
+    }
+    return partner;
+  }
+
+  async getPartnerClaims(partnerId) {
+    const rows = await this.all(`
+      SELECT 
+        c.inc as ClaimId,
+        c.publishedAt as PublishedAt,
+        c.dateBeg as DateBeg,
+        c.dateEnd as DateEnd,
+        c.amount as Amount,
+        c.payAmount as PayAmount,
+        c.taxAmount as TaxAmount,
+        d.filename as FileName,
+        d.size as FileSize,
+        d.inc as DocumentId
+      FROM claim c
+      LEFT JOIN document d ON c.inc = d.claimId
+      WHERE c.partnerId = ? AND c.publishedAt IS NOT NULL
+      ORDER BY c.publishedAt DESC
+    `, [partnerId]);
+    
+    // Преобразуем даты в строки
+    return rows.map(row => ({
+      ...row,
+      DateBeg: new Date(row.DateBeg).toISOString().split('T')[0],
+      DateEnd: new Date(row.DateEnd).toISOString().split('T')[0]
+    }));
   }
 
   async getPartnerDocuments(partnerId, filters = {}) {
@@ -333,6 +374,22 @@ class Database {
     `);
   }
 
+  async createClaim({ partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount }) {
+    const result = await this.run(`
+      INSERT INTO claim (partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount]);
+    return result.id;
+  }
+
+  async saveDocument(claimId, fileName, fileBuffer, fileSize, mimeType) {
+    const result = await this.run(`
+      INSERT INTO document (claimId, filename, content, size, mimetype)
+      VALUES (?, ?, ?, ?, ?)
+    `, [claimId, fileName, fileBuffer, fileSize, mimeType]);
+    return result.id;
+  }
+
   // Метод для получения статистики админа
   async getAdminStats() {
     const stats = {};
@@ -364,22 +421,16 @@ class Database {
     const transaction = await this.beginTransaction();
     
     try {
-      // Создаем уникальный алиас если не указан
-      let finalAlias = alias;
-      if (!finalAlias) {
-        // Генерируем алиас из имени
-        finalAlias = name.toLowerCase()
-          .replace(/[^a-zA-Z0-9а-яё]/gi, '')
-          .substring(0, 10);
-        
-        // Добавляем случайные цифры для уникальности
-        finalAlias += Math.floor(Math.random() * 1000);
-      }
+      // Используем переданный алиас (теперь он обязательный)
+      let finalAlias = alias.trim();
       
       // Проверяем уникальность алиаса
-      const existingAlias = await this.get('SELECT alias FROM partpass WHERE alias = ?', [finalAlias]);
-      if (existingAlias) {
-        finalAlias += Math.floor(Math.random() * 10000);
+      let existingAlias = await this.get('SELECT alias FROM partpass WHERE alias = ?', [finalAlias]);
+      let counter = 0;
+      while (existingAlias && counter < 100) {
+        finalAlias = alias.trim() + Math.floor(Math.random() * 10000);
+        existingAlias = await this.get('SELECT alias FROM partpass WHERE alias = ?', [finalAlias]);
+        counter++;
       }
       
       // Проверяем уникальность email
@@ -394,22 +445,16 @@ class Database {
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       `, [name, email, telegram || null]);
       
-      const partnerId = partnerResult.lastID;
+      const partnerId = partnerResult.id;
       
-      // Хэшируем пароль если указан, иначе генерируем случайный
-      let pswHash = null;
-      let finalPassword = password;
-      if (!password) {
-        // Генерируем случайный пароль
-        finalPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-      }
-      pswHash = await bcrypt.hash(finalPassword, 12);
+      // Хэшируем пароль (теперь он обязательный)
+      const pswHash = await bcrypt.hash(password, 12);
       
       // Создаем запись для авторизации
       await this.run(`
         INSERT INTO partpass (partnerId, alias, pswHash, active, createdAt)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `, [partnerId, finalAlias, pswHash, password ? 1 : 0]);
+        VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+      `, [partnerId, finalAlias, pswHash]);
       
       await this.commit();
       
@@ -418,8 +463,7 @@ class Database {
         alias: finalAlias,
         name,
         email,
-        telegram: telegram || null,
-        password: finalPassword
+        telegram: telegram || null
       };
       
     } catch (error) {

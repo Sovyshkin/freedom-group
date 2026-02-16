@@ -30,51 +30,31 @@ app.use(limiter);
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Разрешаем запросы без origin (например, мобильные приложения)
-    if (!origin) return callback(null, true);
+    // В development режиме разрешаем все origins
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
     
+    // В production используем строгую проверку
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:8080',
       'http://localhost:8081',
       'http://127.0.0.1:8080',
       'http://127.0.0.1:8081',
-      'http://localhost', // Добавляем localhost без порта
-      'http://127.0.0.1', // Добавляем 127.0.0.1 без порта
+      'http://localhost',
+      'http://127.0.0.1',
     ];
     
-    // Добавляем локальный IP адрес с разными портами
-    const localIP = process.env.LOCAL_IP || '193.246.162.61';
-    
-    // Разрешаем запросы с IP на разных портах (включая 80)
-    allowedOrigins.push(`http://${localIP}`);        // для порта 80
-    allowedOrigins.push(`http://${localIP}:80`);    // явное указание порта 80
-    allowedOrigins.push(`http://${localIP}:3000`);  // для разработки
-    allowedOrigins.push(`http://${localIP}:8080`);  // для разработки
-    allowedOrigins.push(`http://${localIP}:8081`);  // для разработки
-    
-    // В development режиме разрешаем все локальные адреса
-    if (process.env.NODE_ENV !== 'production') {
-      // Проверяем, что это локальный адрес
-      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-      const isLocalIP = origin.includes('192.168.') || origin.includes('172.') || origin.includes('10.');
-      
-      if (isLocalhost || isLocalIP || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-    } else {
-      // В production используем строгую проверку
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
     
-    // Для отладки - логируем запрещенные origin
     console.log('❌ Заблокированный origin:', origin);
     callback(new Error('Доступ запрещен CORS policy'));
   },
   credentials: true,
-  optionsSuccessStatus: 200 // Для старых браузеров
+  optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));

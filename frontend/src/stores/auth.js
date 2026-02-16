@@ -10,6 +10,17 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
   const initialized = ref(false)
 
+  // Загружаем user из localStorage при инициализации
+  const storedUser = localStorage.getItem('authUser')
+  if (storedUser) {
+    try {
+      user.value = JSON.parse(storedUser)
+    } catch (e) {
+      console.error('Error parsing stored user:', e)
+      localStorage.removeItem('authUser')
+    }
+  }
+
   // Actions
   const login = async (endpoint, credentials) => {
     try {
@@ -20,8 +31,9 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = response.data.user
         isAuthenticated.value = true
         
-        // Store token in localStorage
+        // Store token and user in localStorage
         localStorage.setItem('authToken', token.value)
+        localStorage.setItem('authUser', JSON.stringify(user.value))
         
         // Set default authorization header
         api.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
@@ -41,8 +53,9 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     isAuthenticated.value = false
     
-    // Remove token from localStorage
+    // Remove token and user from localStorage
     localStorage.removeItem('authToken')
+    localStorage.removeItem('authUser')
     
     // Remove authorization header
     delete api.defaults.headers.common['Authorization']
@@ -52,8 +65,29 @@ export const useAuthStore = defineStore('auth', () => {
     if (token.value) {
       // Set authorization header
       api.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
-      isAuthenticated.value = true
-      console.log('Auth initialized with existing token')
+      
+      try {
+        // Проверяем токен и получаем данные пользователя с сервера
+        const response = await api.get('/auth/verify')
+        
+        if (response.data.success) {
+          user.value = response.data.user
+          isAuthenticated.value = true
+          
+          // Обновляем user в localStorage
+          localStorage.setItem('authUser', JSON.stringify(user.value))
+          
+          console.log('Auth initialized with valid token')
+        } else {
+          // Токен невалиден
+          console.log('Token is invalid, logging out')
+          logout()
+        }
+      } catch (error) {
+        // Ошибка при проверке токена (например, токен истек)
+        console.error('Token verification failed:', error)
+        logout()
+      }
     } else {
       console.log('No token found, user is not authenticated')
     }

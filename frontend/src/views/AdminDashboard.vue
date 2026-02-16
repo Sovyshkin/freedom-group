@@ -57,7 +57,9 @@
             />
             
             <div class="upload-content">
-              <div class="upload-icon">📁</div>
+              <div class="upload-icon">
+                <i class="fas fa-cloud-upload-alt"></i>
+              </div>
               <p>Перетащите Excel файлы сюда или <button @click="$refs.fileInput.click()" class="link-btn">выберите файлы</button></p>
               <p class="upload-hint">Поддерживаются файлы: .xlsx, .xls (максимум 50 файлов)</p>
             </div>
@@ -72,16 +74,21 @@
                   <div class="file-name">{{ file.name }}</div>
                   <div class="file-size">{{ formatFileSize(file.size) }}</div>
                 </div>
-                <button @click="removeFile(index)" class="remove-btn">×</button>
+                <button @click="removeFile(index)" class="remove-btn">
+                  <i class="fas fa-times"></i>
+                </button>
               </div>
             </div>
             
             <div class="upload-actions">
               <button @click="uploadFiles" :disabled="uploading" class="btn btn-primary">
-                <i v-if="uploading" class="icon-spinner"></i>
+                <i v-if="uploading" class="fas fa-spinner fa-spin"></i>
+                <i v-else class="fas fa-upload"></i>
                 {{ uploading ? 'Загрузка...' : 'Загрузить файлы' }}
               </button>
-              <button @click="clearFiles" class="btn btn-secondary">Очистить</button>
+              <button @click="clearFiles" class="btn btn-secondary">
+                <i class="fas fa-trash"></i> Очистить
+              </button>
             </div>
           </div>
           
@@ -89,8 +96,8 @@
           <div v-if="uploadResults.length > 0" class="upload-results">
             <h4>Результаты загрузки</h4>
             <div class="results-summary">
-              <span class="success">✅ Успешно: {{ uploadResults.filter(r => r.success).length }}</span>
-              <span class="error">❌ Ошибки: {{ uploadResults.filter(r => !r.success).length }}</span>
+              <span class="success"><i class="fas fa-check-circle"></i> Успешно: {{ uploadResults.filter(r => r.success).length }}</span>
+              <span class="error"><i class="fas fa-times-circle"></i> Ошибки: {{ uploadResults.filter(r => !r.success).length }}</span>
             </div>
             
             <div class="results-list">
@@ -112,14 +119,14 @@
             <h3>Неопубликованные документы</h3>
             <div class="actions">
               <button @click="refreshDocuments" class="btn btn-secondary">
-                <i class="icon-refresh"></i> Обновить
+                <i class="fas fa-sync-alt"></i> Обновить
               </button>
               <button 
                 @click="publishAllDocuments" 
                 :disabled="!unpublishedClaims.length || publishing"
                 class="btn btn-success"
               >
-                <i v-if="publishing" class="icon-spinner"></i>
+                <i v-if="publishing" class="fas fa-spinner fa-spin"></i>
                 Опубликовать все ({{ unpublishedClaims.length }})
               </button>
             </div>
@@ -204,7 +211,7 @@
           <div class="section-header">
             <h3>Управление партнерами</h3>
             <button @click="showCreatePartnerModal = true" class="btn btn-primary">
-              <i class="icon-plus"></i> Добавить партнера
+              <i class="fas fa-plus"></i> Добавить партнера
             </button>
           </div>
           
@@ -237,7 +244,7 @@
                     {{ partner.PasswordSet ? '✅ Да' : '❌ Нет' }}
                   </span>
                 </td>
-                <td>{{ formatDate(partner.LastVisit) || '—' }}</td>
+                <td>{{ formatDateTime(partner.LastVisit) || '—' }}</td>
                 <td>{{ formatDate(partner.CreatedAt) }}</td>
                 <td>
                   <span :class="['status', partner.IsActive ? 'active' : 'inactive']">
@@ -245,9 +252,17 @@
                   </span>
                 </td>
                 <td>
-                  <button @click="editPartner(partner)" class="btn btn-small btn-secondary">Редактировать</button>
-                  <button @click="viewPartnerDocuments(partner)" class="btn btn-small btn-info">Документы</button>
-                  <button @click="deletePartner(partner)" class="btn btn-small btn-danger">Удалить</button>
+                  <div class="action-buttons">
+                    <button @click="editPartner(partner)" class="btn-icon btn-edit" title="Редактировать">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button @click="viewPartnerDocuments(partner)" class="btn-icon btn-docs" title="Документы">
+                      <i class="fas fa-file-alt"></i>
+                    </button>
+                    <button @click="deletePartner(partner)" class="btn-icon btn-delete" title="Удалить">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -281,13 +296,13 @@
           </div>
           
           <div class="form-group">
-            <label>Логин (опционально)</label>
-            <input v-model="newPartner.alias" type="text" placeholder="Будет сгенерирован автоматически" />
+            <label>Логин *</label>
+            <input v-model="newPartner.alias" type="text" required placeholder="Уникальный логин для входа" />
           </div>
           
           <div class="form-group">
-            <label>Пароль (опционально)</label>
-            <input v-model="newPartner.password" type="password" placeholder="Оставьте пустым для генерации" />
+            <label>Пароль *</label>
+            <input v-model="newPartner.password" type="password" required placeholder="Пароль для входа" />
           </div>
         </form>
         
@@ -296,7 +311,7 @@
             Отмена
           </button>
           <button @click="createPartner" :disabled="creatingPartner" class="btn btn-primary">
-            <i v-if="creatingPartner" class="icon-spinner"></i>
+            <i v-if="creatingPartner" class="fas fa-spinner fa-spin"></i>
             {{ creatingPartner ? 'Создание...' : 'Создать' }}
           </button>
         </div>
@@ -343,7 +358,7 @@
             Отмена
           </button>
           <button @click="updatePartner" :disabled="editingPartner" class="btn btn-primary">
-            <i v-if="editingPartner" class="icon-spinner"></i>
+            <i v-if="editingPartner" class="fas fa-spinner fa-spin"></i>
             {{ editingPartner ? 'Сохранение...' : 'Сохранить' }}
           </button>
         </div>
@@ -641,7 +656,14 @@ const deleteDocument = async (claimId) => {
 
 // Partner management methods
 const editPartner = (partner) => {
-  partnerToEdit.value = { ...partner, newPassword: '' }
+  partnerToEdit.value = {
+    Inc: partner.Inc,
+    name: partner.Name,
+    email: partner.Email,
+    telegram: partner.Telegram,
+    alias: partner.Alias || '',
+    newPassword: ''
+  }
   showEditPartnerModal.value = true
 }
 
@@ -746,13 +768,9 @@ const loadPartners = async () => {
 const createPartner = async () => {
   creatingPartner.value = true
   try {
-    const response = await api.post('/admin/partners', newPartner.value)
-    const partnerData = response.data
+    await api.post('/admin/partners', newPartner.value)
     
     let message = 'Партнер успешно создан'
-    if (!newPartner.value.alias || !newPartner.value.password) {
-      message += `\nЛогин: ${partnerData.alias}\nПароль: ${partnerData.password}`
-    }
     
     notificationStore.addNotification({
       type: 'success',
@@ -787,6 +805,18 @@ const formatFileSize = (bytes) => {
 const formatDate = (date) => {
   if (!date) return ''
   return new Date(date).toLocaleDateString('ru-RU')
+}
+
+const formatDateTime = (date) => {
+  if (!date) return ''
+  return new Date(date).toLocaleString('ru-RU', { 
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 const formatPeriod = (dateFrom, dateTo) => {
@@ -827,27 +857,16 @@ watch(activeTab, handleTabChange)
 <style scoped>
 .admin-dashboard {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-  font-family: 'Inter', sans-serif;
-  font-weight: 500;
+  background: #f8fafc;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400;
   position: relative;
 }
 
-.admin-dashboard::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 300px;
-  background: radial-gradient(ellipse at top, rgba(18, 51, 234, 0.1) 0%, transparent 70%);
-  pointer-events: none;
-}
-
 .dashboard-container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 24px;
 }
 
 .stats-grid {
@@ -864,35 +883,32 @@ watch(activeTab, handleTabChange)
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
-  gap: 20px;
-  transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  gap: 16px;
+  transition: all 0.2s ease;
+  border: 1px solid #e5e7eb;
   position: relative;
-  overflow: hidden;
 }
 
 .stat-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  left: 16px;
+  right: 16px;
+  height: 3px;
+  background: #2563eb;
+  border-radius: 2px;
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #2563eb;
 }
 
 .stat-icon {
-  font-size: 3rem;
-  opacity: 0.8;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 2.5rem;
+  opacity: 0.9;
+  color: #2563eb;
 }
 
 .stat-content {
@@ -900,31 +916,29 @@ watch(activeTab, handleTabChange)
 }
 
 .stat-value {
-  font-size: 2rem;
+  font-size: 1.8rem;
   font-weight: 700;
-  color: #334155;
-  margin-bottom: 4px;
-  background: linear-gradient(135deg, #334155, #64748b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #1e293b;
+  margin-bottom: 6px;
 }
 
 .stat-label {
   color: #64748b;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tabs {
   display: flex;
   background: white;
-  border-radius: 16px 16px 0 0;
+  border-radius: 0;
   margin-bottom: 0;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid #e2e8f0;
-  border-bottom: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+  border-bottom: 2px solid #e5e7eb;
 }
 
 .tab {
@@ -933,35 +947,26 @@ watch(activeTab, handleTabChange)
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  color: #64748b;
-  transition: all 0.3s ease;
+  color: #6b7280;
+  transition: all 0.2s ease;
   position: relative;
   text-align: center;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
 }
 
 .tab:hover {
-  color: #334155;
-  background: #f8fafc;
+  color: #2563eb;
+  background: #f9fafb;
 }
 
 .tab.active {
-  color: #667eea;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #2563eb;
+  background: white;
   font-weight: 600;
-}
-
-.tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40px;
-  height: 3px;
-  background: linear-gradient(90deg, #667eea, #764ba2);
-  border-radius: 2px;
+  border-bottom-color: #2563eb;
 }
 
 .tab {
@@ -1077,22 +1082,23 @@ watch(activeTab, handleTabChange)
 }
 
 .remove-btn {
-  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+  background: #ef4444;
   color: white;
   border: none;
   border-radius: 50%;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .remove-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(255, 154, 158, 0.4);
+  background: #dc2626;
 }
 
 .upload-actions {
@@ -1148,59 +1154,46 @@ watch(activeTab, handleTabChange)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 30px;
-  border-bottom: 1px solid #f1f5f9;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: white;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .section-header h3 {
   margin: 0;
-  color: #334155;
+  color: #1e293b;
   font-weight: 600;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .upload-area {
   border: 2px dashed #cbd5e1;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 60px 40px;
   text-align: center;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  transition: all 0.3s ease;
+  background: #f9fafb;
+  transition: all 0.2s ease;
   cursor: pointer;
   position: relative;
-  overflow: hidden;
-}
-
-.upload-area::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.05), transparent);
-  transition: left 0.5s;
-}
-
-.upload-area:hover::before {
-  left: 100%;
 }
 
 .upload-area:hover {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: #2563eb;
+  background: #f1f5f9;
 }
 
 .upload-area.dragover {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
-  transform: scale(1.02);
+  border-color: #2563eb;
+  background: #e0e7ff;
+  border-style: solid;
 }
 
 .upload-content p {
@@ -1215,7 +1208,7 @@ watch(activeTab, handleTabChange)
 }
 
 .link-btn {
-  color: #667eea;
+  color: #2563eb;
   text-decoration: none;
   font-weight: 500;
   border-bottom: 1px solid transparent;
@@ -1223,7 +1216,7 @@ watch(activeTab, handleTabChange)
 }
 
 .link-btn:hover {
-  border-bottom-color: #667eea;
+  border-bottom-color: #2563eb;
 }
 
 .documents-table,
@@ -1231,45 +1224,40 @@ watch(activeTab, handleTabChange)
   width: 100%;
   border-collapse: collapse;
   background: white;
-  border-radius: 12px;
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  margin-top: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .documents-table th,
 .documents-table td,
 .partners-table th,
 .partners-table td {
-  padding: 16px 20px;
+  padding: 14px 16px;
   text-align: left;
-  border-bottom: 1px solid #f1f5f9;
-  transition: all 0.2s ease;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 14px;
 }
 
 .documents-table th,
 .partners-table th {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  background: #f9fafb;
   font-weight: 600;
-  color: #334155;
-  font-size: 14px;
+  color: #374151;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  white-space: nowrap;
 }
 
 .documents-table tbody tr,
 .partners-table tbody tr {
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .documents-table tbody tr:hover,
 .partners-table tbody tr:hover {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f9fafb;
 }
 
 .documents-table tbody tr:last-child td,
@@ -1286,44 +1274,45 @@ watch(activeTab, handleTabChange)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 30px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border-top: 1px solid #e2e8f0;
-  border-radius: 0 0 12px 12px;
+  padding: 16px 24px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .status {
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 4px 10px;
+  border-radius: 4px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  letter-spacing: 0.3px;
+  display: inline-block;
 }
 
 .status.uploaded {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  color: #92400e;
+  background: #fef3c7;
+  color: #78350f;
 }
 
 .status.published {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: #d1fae5;
   color: #065f46;
 }
 
 .status.error {
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  background: #fee2e2;
   color: #991b1b;
 }
 
 .status.active {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: #d1fae5;
   color: #065f46;
 }
 
 .status.inactive {
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  background: #fee2e2;
   color: #991b1b;
 }
 
@@ -1343,61 +1332,37 @@ watch(activeTab, handleTabChange)
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: modalFadeIn 0.3s ease-out;
-}
-
-@keyframes modalFadeIn {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0px);
-  }
-  to {
-    opacity: 1;
-    backdrop-filter: blur(8px);
-  }
+  padding: 20px;
 }
 
 .modal {
   background: white;
-  border-radius: 16px;
-  width: 500px;
-  max-width: 90vw;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: modalSlideIn 0.3s ease-out;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid #e5e7eb;
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 30px;
-  border-bottom: 1px solid #f1f5f9;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: white;
 }
 
 .modal-header h3 {
   margin: 0;
-  color: #334155;
+  color: #1e293b;
   font-weight: 600;
   font-size: 18px;
 }
@@ -1407,177 +1372,147 @@ watch(activeTab, handleTabChange)
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #64748b;
-  transition: all 0.2s ease;
+  color: #6b7280;
+  transition: color 0.2s ease;
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .close-btn:hover {
-  background: #e2e8f0;
-  color: #334155;
-  transform: rotate(90deg);
+  background: #f3f4f6;
+  color: #1f2937;
 }
 
 .modal-body {
-  padding: 30px;
+  padding: 24px;
 }
 
 .form-group {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 8px;
-  font-weight: 600;
-  color: #334155;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #374151;
   font-size: 14px;
 }
 
 .form-group input {
   width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   font-size: 14px;
   transition: all 0.2s ease;
-  background: #f8fafc;
+  background: white;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 24px 30px;
-  border-top: 1px solid #f1f5f9;
-  background: #f8fafc;
+  gap: 10px;
+  padding: 20px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
 }
 
 .btn {
   padding: 10px 20px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s;
-}
-
-.btn:hover::before {
-  left: 100%;
+  white-space: nowrap;
 }
 
 .btn-sm {
   padding: 6px 12px;
-  font-size: 12px;
-  border-radius: 6px;
+  font-size: 13px;
+  border-radius: 5px;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #2563eb;
   color: white;
-  font-family: 'Inter', sans-serif;
-  font-weight: 600;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  background: #1d4ed8;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
 }
 
 .btn-secondary {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: #64748b;
   color: white;
-  box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-secondary:hover {
-  background: linear-gradient(135deg, #e887f7 0%, #e54a60 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.6);
+  background: #475569;
+  box-shadow: 0 2px 6px rgba(100, 116, 139, 0.3);
 }
 
 .btn-success {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  background: #10b981;
   color: white;
-  font-family: 'Inter', sans-serif;
-  font-weight: 600;
-  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-success:hover {
-  background: linear-gradient(135deg, #3a9be6 0%, #00e0e6 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
+  background: #059669;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+  background: #ef4444;
   color: white;
-  box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-danger:hover {
-  background: linear-gradient(135deg, #ff8a8e 0%, #fedfdf 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 154, 158, 0.6);
+  background: #dc2626;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
 .btn-info {
-  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-  color: #2c3e50;
-  font-weight: 600;
-  box-shadow: 0 4px 15px rgba(168, 237, 234, 0.4);
+  background: #06b6d4;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-info:hover {
-  background: linear-gradient(135deg, #98e0da 0%, #fec6d3 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(168, 237, 234, 0.6);
+  background: #0891b2;
+  box-shadow: 0 2px 6px rgba(6, 182, 212, 0.3);
 }
 
 .btn:disabled {
-  background: #e9ecef;
-  color: #6c757d;
+  background: #e5e7eb;
+  color: #9ca3af;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
 }
 
 .btn:disabled:hover {
-  transform: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: #e5e7eb;
+  box-shadow: none;
 }
 
 .empty-state {
@@ -1597,9 +1532,7 @@ watch(activeTab, handleTabChange)
 }
 
 /* Icons */
-.icon-plus::before { content: '➕'; }
-.icon-refresh::before { content: '🔄'; }
-.icon-spinner::before { content: '⏳'; }
+
 
 @media (max-width: 768px) {
   .dashboard-container {
@@ -1710,10 +1643,8 @@ watch(activeTab, handleTabChange)
 /* Enhanced focus states */
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
-  background: #f8fafc;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-  transform: translateY(-1px);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 /* Smooth transitions for all interactive elements */
@@ -1744,21 +1675,18 @@ watch(activeTab, handleTabChange)
 }
 
 .btn-small:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: #0891b2;
 }
 
 .btn-info {
-  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-  color: #2c3e50;
-  font-weight: 600;
-  box-shadow: 0 4px 15px rgba(168, 237, 234, 0.4);
+  background: #06b6d4;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-info:hover {
-  background: linear-gradient(135deg, #98e0da 0%, #fec6d3 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(168, 237, 234, 0.6);
+  background: #0891b2;
+  box-shadow: 0 2px 6px rgba(6, 182, 212, 0.3);
 }
 
 .btn-danger {
@@ -1778,36 +1706,6 @@ watch(activeTab, handleTabChange)
   max-height: 80vh;
 }
 
-.documents-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  margin-top: 20px;
-}
-
-.documents-table th,
-.documents-table td {
-  padding: 16px 20px;
-  text-align: left;
-  border-bottom: 1px solid #f1f5f9;
-  transition: all 0.2s ease;
-}
-
-.documents-table th {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  font-weight: 600;
-  color: #334155;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
 .partners-table th:last-child,
 .partners-table td:last-child {
   width: 220px;
@@ -1818,27 +1716,49 @@ watch(activeTab, handleTabChange)
     padding: 16px;
   }
   
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .stat-card {
+    padding: 12px;
+    gap: 8px;
+  }
+  
+  .stat-icon {
+    font-size: 1.5rem;
+  }
+  
+  .stat-value {
+    font-size: 1.3rem;
+  }
+  
+  .stat-label {
+    font-size: 0.7rem;
+  }
+  
   .tabs {
     flex-direction: column;
-    border-radius: 12px;
-    margin-bottom: 20px;
   }
   
   .tab {
-    border-radius: 8px;
-    margin-bottom: 8px;
+    text-align: left;
+    padding: 14px 20px;
   }
   
   .section-header {
     flex-direction: column;
-    gap: 16px;
     align-items: stretch;
-    padding: 20px;
   }
   
   .actions {
-    justify-content: stretch;
-    flex-wrap: wrap;
+    flex-direction: column;
+  }
+  
+  .actions .btn {
+    width: 100%;
+    justify-content: center;
   }
   
   .upload-area {
@@ -1849,41 +1769,96 @@ watch(activeTab, handleTabChange)
   .partners-table {
     display: block;
     overflow-x: auto;
-    white-space: nowrap;
-    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .documents-table th,
+  .documents-table td,
+  .partners-table th,
+  .partners-table td {
+    padding: 12px 10px;
+    font-size: 13px;
   }
   
   .bulk-actions {
     flex-direction: column;
-    gap: 16px;
     align-items: stretch;
-    padding: 16px 20px;
+  }
+  
+  .bulk-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
   
   .modal {
-    width: 95%;
-    margin: 20px;
-    max-width: calc(100vw - 40px);
-    border-radius: 12px;
+    width: calc(100vw - 32px);
+    max-width: 100%;
   }
   
   .modal-header,
   .modal-body,
   .modal-footer {
-    padding: 20px;
-  }
-  
-  .btn {
-    padding: 12px 20px;
-    font-size: 15px;
+    padding: 16px;
   }
   
   .stat-card {
-    padding: 20px;
+    padding: 12px;
   }
   
-  .stat-value {
-    font-size: 2rem;
+  .action-buttons {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .action-buttons .btn-icon {
+    width: 100%;
+    margin-right: 0;
   }
 }
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  margin-right: 4px;
+}
+
+.btn-icon:last-child {
+  margin-right: 0;
+}
+
+.btn-edit {
+  background: #64748b;
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #475569;
+}
+
+.btn-docs {
+  background: #06b6d4;
+  color: white;
+}
+
+.btn-docs:hover {
+  background: #0891b2;
+}
+
+.btn-delete {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #dc2626;
+}
+
 </style>

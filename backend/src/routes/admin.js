@@ -285,7 +285,8 @@ router.post('/partners', [
   body('name').notEmpty().withMessage('Имя партнера обязательно'),
   body('email').isEmail().withMessage('Введите корректный email'),
   body('telegram').optional().isString(),
-  body('alias').optional().isString(),
+  body('alias').notEmpty().withMessage('Логин обязателен'),
+  body('password').notEmpty().withMessage('Пароль обязателен'),
   logAction('create_partner', 'partner')
 ], async (req, res, next) => {
   try {
@@ -298,14 +299,15 @@ router.post('/partners', [
       });
     }
     
-    const { name, email, telegram, alias } = req.body;
+    const { name, email, telegram, alias, password } = req.body;
     
     // Создаем партнера
     const partnerData = await db.createPartner({
       name,
       email,
       telegram,
-      alias
+      alias,
+      password
     });
     
     // Создаем токен для установки пароля

@@ -39,7 +39,7 @@
               @input="handleSearch"
             />
             <button @click="toggleFilters" class="filter-btn">
-              <i class="icon-filter"></i> Фильтры
+              <i class="fas fa-filter"></i> Фильтры
             </button>
           </div>
         </div>
@@ -106,8 +106,8 @@
                     class="btn btn-download"
                     :disabled="downloading === doc.documentId"
                   >
-                    <i v-if="downloading === doc.documentId" class="icon-spinner"></i>
-                    <i v-else class="icon-download"></i>
+                    <i v-if="downloading === doc.documentId" class="fas fa-spinner fa-spin"></i>
+                    <i v-else class="fas fa-download"></i>
                     {{ doc.fileName }}
                   </button>
                 </td>
@@ -116,7 +116,9 @@
           </table>
           
           <div v-else class="empty-state">
-            <div class="empty-icon">📄</div>
+            <div class="empty-icon">
+              <i class="fas fa-folder-open"></i>
+            </div>
             <h3>Документы не найдены</h3>
             <p>У вас пока нет доступных документов или они не соответствуют критериям поиска.</p>
           </div>
@@ -129,7 +131,7 @@
             :disabled="currentPage === 1"
             class="pagination-btn"
           >
-            ← Предыдущая
+            <i class="fas fa-chevron-left"></i>
           </button>
           
           <div class="pagination-info">
@@ -141,7 +143,7 @@
             :disabled="currentPage === totalPages"
             class="pagination-btn"
           >
-            Следующая →
+            <i class="fas fa-chevron-right"></i>
           </button>
         </div>
       </div>
@@ -340,8 +342,8 @@ const sortBy = (field) => {
 }
 
 const getSortIcon = (field) => {
-  if (sortField.value !== field) return 'icon-sort'
-  return sortOrder.value === 'asc' ? 'icon-sort-up' : 'icon-sort-down'
+  if (sortField.value !== field) return 'fas fa-sort'
+  return sortOrder.value === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'
 }
 
 const changePage = (page) => {
@@ -382,16 +384,6 @@ onMounted(() => {
   position: relative;
 }
 
-.partner-dashboard::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 200px;
-  background: linear-gradient(135deg, rgba(18, 51, 234, 0.05) 0%, transparent 100%);
-  pointer-events: none;
-}
 
 .dashboard-container {
   max-width: 1200px;
@@ -414,6 +406,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+  position: relative;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  background: #2563eb;
+  border-radius: 2px;
 }
 
 .stat-icon {
@@ -675,17 +679,33 @@ onMounted(() => {
   color: #6c757d;
 }
 
-/* Icons */
-.icon-filter::before { content: '🔍'; }
-.icon-download::before { content: '⬇️'; }
-.icon-spinner::before { content: '⏳'; }
-.icon-sort::before { content: '↕️'; }
-.icon-sort-up::before { content: '⬆️'; }
-.icon-sort-down::before { content: '⬇️'; }
+
 
 @media (max-width: 768px) {
   .dashboard-container {
     padding: 16px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .stat-card {
+    padding: 12px;
+    gap: 8px;
+  }
+  
+  .stat-icon {
+    font-size: 1.8rem;
+  }
+  
+  .stat-value {
+    font-size: 1.3rem;
+  }
+  
+  .stat-label {
+    font-size: 0.8rem;
   }
   
   .section-header {

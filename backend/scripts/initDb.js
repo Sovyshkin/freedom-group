@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const db = require('./database');
+const db = require('../src/models/database');
 require('dotenv').config();
 
 async function initializeDatabase() {
@@ -48,21 +48,21 @@ async function createTestData() {
     
     if (!existingPartner) {
       // Создаем тестового партнера
-      const result = await db.execute('dbo.sp_CreatePartnerWithPassword', {
-        Name: 'ИП Тестовый Партнер',
-        Email: 'test@partner.com',
-        Telegram: '@test_partner',
-        Alias: 'test_partner'
-      });
+      const partnerResult = await db.run(`
+        INSERT INTO partner (name, email, telegram)
+        VALUES (?, ?, ?)
+      `, ['ИП Тестовый Партнер', 'test@partner.com', '@test_partner']);
       
-      const partnerId = result.recordset[0].PartnerId;
-      const alias = result.recordset[0].Alias;
+      const partnerId = partnerResult.id;
       
-      // Устанавливаем пароль (test123)
+      // Создаем запись в partpass
       const passwordHash = await bcrypt.hash('test123', 12);
-      await db.updatePartnerPassword(partnerId, passwordHash);
+      await db.run(`
+        INSERT INTO partpass (partnerId, alias, pswHash, active)
+        VALUES (?, ?, ?, ?)
+      `, [partnerId, 'test_partner', passwordHash, 1]);
       
-      console.log(`✅ Создан тестовый партнер: ${alias} (пароль: test123)`);
+      console.log(`✅ Создан тестовый партнер: test_partner (пароль: test123)`);
       
       // Создаем тестовый claim
       const claimId = await db.createClaim({

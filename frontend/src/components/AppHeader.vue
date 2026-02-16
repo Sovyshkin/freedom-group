@@ -1,11 +1,14 @@
 <script setup>
 import { onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.js'
 // import GlobalSearch from './GlobalSearch.vue'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
 const handleLogout = () => {
+  router.push('/login')
   authStore.logout()
 }
 
@@ -53,14 +56,11 @@ onMounted(() => {
       <span class="user" v-if="authStore.user?.role === 'admin'">
         {{ displayUser.username }}
       </span>
-      <span class="user" v-else-if="authStore.user?.role === 'partner' && displayUser.name">
-        {{ displayUser.name }}
-      </span>
-      <span class="user" v-else-if="authStore.isAuthenticated && displayUser.email">
-        {{ displayUser.email }}
+      <span class="user" v-else-if="authStore.user?.role === 'partner'">
+        {{ displayUser.name || displayUser.username || displayUser.email || 'Пользователь' }}
       </span>
       <span class="user" v-else-if="authStore.isAuthenticated">
-        Пользователь
+        {{ displayUser.email || 'Пользователь' }}
       </span>
       <span class="user" v-else>
         Гость

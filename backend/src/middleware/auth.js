@@ -115,14 +115,14 @@ const logAction = (action, entityType = null) => {
 
 // Middleware для защиты от brute force атак
 const bruteForceProtection = async (req, res, next) => {
-  const { alias } = req.body;
+  const { login } = req.body;
   
-  if (!alias) {
+  if (!login) {
     return next();
   }
 
   try {
-    const partnerAuth = await db.getPartnerAuth(alias);
+    const partnerAuth = await db.getPartnerAuth(login);
     
     if (partnerAuth) {
       // Проверяем блокировку

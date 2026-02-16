@@ -21,7 +21,7 @@ const generateToken = (payload) => {
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', [
-  body('alias').notEmpty().withMessage('Логин обязателен'),
+  body('login').notEmpty().withMessage('Логин или email обязателен'),
   body('password').isLength({ min: 6 }).withMessage('Пароль должен содержать минимум 6 символов'),
   bruteForceProtection,
   logAction('partner_login_attempt')
@@ -36,10 +36,10 @@ router.post('/login', [
       });
     }
 
-    const { alias, password } = req.body;
+    const { login, password } = req.body;
 
     // Получаем данные партнера
-    const partnerAuth = await db.getPartnerAuth(alias);
+    const partnerAuth = await db.getPartnerAuth(login);
     
     if (!partnerAuth) {
       return res.status(401).json({
@@ -51,7 +51,7 @@ router.post('/login', [
     // Проверяем наличие хеша пароля
     const passwordHash = partnerAuth.pswHash || partnerAuth.PswHash;
     if (!passwordHash) {
-      console.error('❌ Хеш пароля не найден для партнера:', alias);
+      console.error('❌ Хеш пароля не найден для партнера:', login);
       return res.status(500).json({
         success: false,
         message: 'Ошибка конфигурации пользователя'

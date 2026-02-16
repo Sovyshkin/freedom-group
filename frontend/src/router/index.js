@@ -48,8 +48,12 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresGuest && isAuthenticated) {
     if (userRole === 'admin') {
       return next('/admin')
-    } else {
+    } else if (userRole === 'partner') {
       return next('/dashboard')
+    } else {
+      // Если роль не определена, но пользователь authenticated, 
+      // даем время роутеру определиться
+      return next()
     }
   }
   
@@ -59,12 +63,21 @@ router.beforeEach(async (to, from, next) => {
   }
   
   // Если маршрут требует определенную роль
-  if (to.meta.requiresRole && userRole !== to.meta.requiresRole) {
-    if (userRole === 'admin') {
-      return next('/admin')
-    } else if (userRole === 'partner') {
-      return next('/dashboard') 
-    } else {
+  if (to.meta.requiresRole) {
+    // Если роль не совпадает
+    if (userRole && userRole !== to.meta.requiresRole) {
+      if (userRole === 'admin') {
+        return next('/admin')
+      } else if (userRole === 'partner') {
+        return next('/dashboard') 
+      }
+    }
+    
+    // Если роль не определена, но пользователь authenticated, 
+    // возможно данные еще загружаются - редирект на login
+    if (!userRole && isAuthenticated) {
+      console.warn('User role is not defined, redirecting to login')
+      authStore.logout()
       return next('/login')
     }
   }

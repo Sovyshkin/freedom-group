@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuthStore } from '@/stores/auth';
 
 // Определяем базовый URL в зависимости от окружения
 const getBaseURL = () => {
@@ -15,28 +16,12 @@ const getBaseURL = () => {
 
 // Устанавливаем базовый URL для API
 axios.defaults.baseURL = getBaseURL(); 
-// axios.defaults.baseURL = 'http://87.236.23.19:1337/api';
-
-// Настройка interceptor для автоматической обработки истечения токенов
-let isRefreshing = false;
-let failedQueue = [];
-
-const processQueue = (error, token = null) => {
-  failedQueue.forEach(prom => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-  
-  failedQueue = [];
-};
+//  axios.defaults.baseURL = 'http://localhost:3001/api'; 
 
 // Request interceptor для добавления токена к каждому запросу
 axios.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('jwt');
+    const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -55,68 +40,23 @@ axios.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Обрабатываем 401 ошибку (неавторизован)
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        // Если уже обновляем токен, добавляем запрос в очередь
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then(token => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return axios(originalRequest);
-        }).catch(err => {
-          return Promise.reject(err);
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
-
-      const refreshToken = localStorage.getItem('refreshToken');
-
-      if (refreshToken) {
-        try {
-          const response = await axios.post('/auth/refresh', {
-            refreshToken: refreshToken
-          });
-
-          const { jwt: newToken } = response.data;
-          localStorage.setItem('jwt', newToken);
-          
-          // Обновляем заголовок по умолчанию
-          axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-          
-          processQueue(null, newToken);
-          
-          // Повторяем оригинальный запрос с новым токеном
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          return axios(originalRequest);
-          
-        } catch (refreshError) {
-          processQueue(refreshError, null);
-          
-          // Удаляем токены и перенаправляем на логин
-          localStorage.removeItem('jwt');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('tokenExpiration');
-          localStorage.removeItem('user');
-          
-          // Перенаправляем на страницу входа
-          window.location.href = '/login';
-          
-          return Promise.reject(refreshError);
-        } finally {
-          isRefreshing = false;
-        }
-      } else {
-        // Нет refresh токена, перенаправляем на логин
-        localStorage.removeItem('jwt');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('tokenExpiration');
-        localStorage.removeItem('user');
-        
+      
+      // Получаем auth store
+      const authStore = useAuthStore();
+      
+      // Выходим из системы и перенаправляем на логин
+      console.error('401 Unauthorized - logging out');
+      authStore.logout();
+      
+      // Перенаправляем на страницу входа (если не на ней)
+      if (window.location.pathname !== '/login') {
         window.location.href = '/login';
-        return Promise.reject(error);
       }
+      
+      return Promise.reject(error);
     }
 
     return Promise.reject(error);

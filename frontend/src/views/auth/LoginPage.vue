@@ -31,7 +31,7 @@
               v-model="formData.login"
               type="text"
               required
-              :placeholder="loginType === 'admin' ? 'Имя пользователя' : 'Логин'"
+              :placeholder="loginType === 'admin' ? 'Имя пользователя' : 'Логин или email'"
               :class="{ error: errors.login }"
               class="input-field"
             />
@@ -113,11 +113,14 @@ const errors = ref({})
 const validateForm = () => {
   errors.value = {}
   
-  if (!formData.login) {
-    errors.value.login = loginType.value === 'admin' ? 'Имя пользователя обязательно' : 'Логин обязателен'
+  const trimmedLogin = formData.login.trim()
+  const trimmedPassword = formData.password.trim()
+  
+  if (!trimmedLogin) {
+    errors.value.login = loginType.value === 'admin' ? 'Имя пользователя обязательно' : 'Логин или email обязателен'
   }
   
-  if (!formData.password) {
+  if (!trimmedPassword) {
     errors.value.password = 'Пароль обязателен'
   }
   
@@ -132,8 +135,8 @@ const login = async () => {
   try {
     const endpoint = loginType.value === 'admin' ? '/auth/admin/login' : '/auth/login'
     const loginData = loginType.value === 'admin' 
-      ? { username: formData.login, password: formData.password }
-      : { alias: formData.login, password: formData.password }
+      ? { username: formData.login.trim(), password: formData.password.trim() }
+      : { login: formData.login.trim(), password: formData.password.trim() }
     
     await authStore.login(endpoint, loginData)
     
@@ -186,7 +189,7 @@ const login = async () => {
 
 .container {
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
 }
 
 .login-card {
@@ -194,7 +197,22 @@ const login = async () => {
   border-radius: 16px;
   border: 1px solid #f1f3f4;
   overflow: hidden;
-  animation: fadeIn 0.6s ease-out;
+  animation: fadeIn 0.6s ease-out, levitate 4s ease-in-out infinite;
+  box-shadow: 
+    0 25px 50px rgba(0, 0, 0, 0.1),
+    0 15px 35px rgba(0, 0, 0, 0.05),
+    0 5px 15px rgba(0, 0, 0, 0.02);
+  transform: translateY(-5px);
+  transition: all 0.3s ease;
+}
+
+.login-card:hover {
+  animation-play-state: paused;
+  transform: translateY(-10px);
+  box-shadow: 
+    0 35px 60px rgba(0, 0, 0, 0.15),
+    0 20px 40px rgba(0, 0, 0, 0.1),
+    0 10px 20px rgba(0, 0, 0, 0.05);
 }
 
 @keyframes fadeIn {
@@ -205,6 +223,21 @@ const login = async () => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes levitate {
+  0%, 100% {
+    transform: translateY(-5px) translateX(0);
+  }
+  25% {
+    transform: translateY(-5px) translateX(2px);
+  }
+  50% {
+    transform: translateY(-5px) translateX(0);
+  }
+  75% {
+    transform: translateY(-5px) translateX(-2px);
   }
 }
 

@@ -36,7 +36,7 @@ router.get('/profile', async (req, res, next) => {
         telegram: partner.Telegram,
         alias: req.user.alias,
         createdAt: partner.CreatedAt,
-        lastVisit: authInfo?.LastVisit
+        lastVisit: authInfo?.lastVisit
       }
     });
     
@@ -122,43 +122,53 @@ router.get('/documents/:documentId/download', [
 router.get('/stats', async (req, res, next) => {
   try {
     const partnerId = req.user.partnerId;
-    
+
     // Общее количество документов
-    const totalDocsResult = await db.query(`
-      SELECT COUNT(*) as total FROM dbo.Claim 
-      WHERE Partner = @partnerId AND Published = 1
-    `, { partnerId });
-    
+    const totalDocsResult = await db.get(`
+      SELECT COUNT(*) as total FROM claim
+      WHERE partnerId = ? AND publishedAt IS NOT NULL
+    `, [partnerId]);
+
     // Сумма за последний год
-    const yearlyAmountResult = await db.query(`
-      SELECT ISNULL(SUM(Amount), 0) as total FROM dbo.Claim 
-      WHERE Partner = @partnerId AND Published = 1 
-      AND PublishedAt > DATEADD(YEAR, -1, GETDATE())
-    `, { partnerId });
-    
+    const yearlyAmountResult = await db.get(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM claim
+      WHERE partnerId = ? AND publishedAt IS NOT NULL
+      AND publishedAt > datetime('now', '-1 year')
+    `, [partnerId]);
+
     // Сумма за текущий месяц
-    const monthlyAmountResult = await db.query(`
-      SELECT ISNULL(SUM(Amount), 0) as total FROM dbo.Claim 
-      WHERE Partner = @partnerId AND Published = 1 
-      AND YEAR(PublishedAt) = YEAR(GETDATE()) 
-      AND MONTH(PublishedAt) = MONTH(GETDATE())
-    `, { partnerId });
-    
+    const monthlyAmountResult = await db.get(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM claim
+      WHERE partnerId = ? AND publishedAt IS NOT NULL
+      AND strftime('%Y-%m', publishedAt) = strftime('%Y-%m', 'now')
+    `, [partnerId]);
+
     // Последний документ
-    const lastDocResult = await db.query(`
-      SELECT TOP 1 PublishedAt, DateBeg, DateEnd, Amount 
-      FROM dbo.Claim 
-      WHERE Partner = @partnerId AND Published = 1
-      ORDER BY PublishedAt DESC
-    `, { partnerId });
-    
+    const lastDocResult = await db.get(`
+      SELECT publishedAt, dateBeg, dateEnd, amount
+      FROM claim
+      WHERE partnerId = ? AND publishedAt IS NOT NULL
+      ORDER BY publishedAt DESC
+      LIMIT 1
+    `, [partnerId]);
+
+    // Преобразуем даты в lastDocument если он существует
+    let lastDocument = null;
+    if (lastDocResult) {
+      lastDocument = {
+        ...lastDocResult,
+        dateBeg: new Date(lastDocResult.dateBeg).toISOString().split('T')[0],
+        dateEnd: new Date(lastDocResult.dateEnd).toISOString().split('T')[0]
+      };
+    }
+
     res.json({
       success: true,
       stats: {
-        totalDocuments: totalDocsResult.recordset[0].total,
-        yearlyAmount: yearlyAmountResult.recordset[0].total,
-        monthlyAmount: monthlyAmountResult.recordset[0].total,
-        lastDocument: lastDocResult.recordset[0] || null
+        totalDocuments: totalDocsResult.total,
+        yearlyAmount: yearlyAmountResult.total,
+        monthlyAmount: monthlyAmountResult.total,
+        lastDocument: lastDocument
       }
     });
     

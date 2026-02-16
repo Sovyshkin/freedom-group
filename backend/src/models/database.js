@@ -1,4 +1,6 @@
 // Выбираем базу данных в зависимости от настроек
+require('dotenv').config();
+
 const dbType = process.env.DB_TYPE || 'mssql';
 
 if (dbType === 'sqlite') {
@@ -8,7 +10,6 @@ if (dbType === 'sqlite') {
   // Используем MS SQL Server для продакшена
   const sql = require('mssql');
   const bcrypt = require('bcryptjs');
-  require('dotenv').config();
 
 const config = {
   server: process.env.DB_HOST || 'localhost',
