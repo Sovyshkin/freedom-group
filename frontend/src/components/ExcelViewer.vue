@@ -77,6 +77,7 @@
 </template>
 
 <script setup>
+/* global defineProps, defineEmits */
 import { ref, watch } from 'vue'
 import AppLoader from '@/components/AppLoader.vue'
 
