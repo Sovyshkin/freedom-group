@@ -41,34 +41,54 @@ const processExcelFile = (fileBuffer, fileName) => {
   try {
     const workbook = xlsx.read(fileBuffer);
     
-    // Проверяем наличие листа Partner
-    if (!workbook.SheetNames.includes('Partner')) {
-      throw new Error('В файле отсутствует обязательный лист "Partner"');
+    // Проверяем наличие листа Partner (без учета регистра, поддержка русского)
+    const partnerSheetName = workbook.SheetNames.find(name => 
+      name.toLowerCase() === 'partner' || 
+      name.toLowerCase() === 'партнер'
+    );
+    
+    if (!partnerSheetName) {
+      throw new Error('В файле отсутствует обязательный лист "Partner" или "Партнер"');
     }
     
-    const partnerSheet = workbook.Sheets['Partner'];
-    const partnerData = xlsx.utils.sheet_to_json(partnerSheet);
+    const partnerSheet = workbook.Sheets[partnerSheetName];
+    const partnerData = xlsx.utils.sheet_to_json(partnerSheet, { header: ['name', 'value'] });
     
     if (partnerData.length === 0) {
       throw new Error('Лист "Partner" не содержит данных');
     }
     
-    const data = partnerData[0]; // Берем первую строку
+    // Преобразуем массив key-value в объект
+    const dataMap = {};
+    partnerData.forEach(row => {
+      if (row.name && row.value !== undefined) {
+        const key = String(row.name).toLowerCase().trim();
+        dataMap[key] = row.value;
+      }
+    });
     
-    // Проверяем обязательные поля
-    const requiredFields = ['Inc', 'DateBeg', 'DateEnd', 'Amount', 'PayAmount', 'TaxAmount'];
-    const missingFields = requiredFields.filter(field => !data.hasOwnProperty(field) || data[field] === null || data[field] === undefined);
+    console.log('📋 Извлеченные данные из листа Partner:', Object.keys(dataMap));
+    
+    // Проверяем обязательные поля (убрали inc, так как partnerId приходит из запроса)
+    const requiredFields = ['period from', 'period till', 'net', 'invoice', 'tax'];
+    const missingFields = requiredFields.filter(field => !dataMap.hasOwnProperty(field) || dataMap[field] === null || dataMap[field] === undefined);
     
     if (missingFields.length > 0) {
       throw new Error(`Отсутствуют обязательные поля: ${missingFields.join(', ')}`);
     }
     
+    // Получаем тип документа (doctype или type)
+    const docType = dataMap['doctype'] || dataMap['doc type'] || dataMap['type'] || '';
+    
+    // Получаем валюту (currency или curreny - учитываем опечатку)
+    const currency = dataMap['currency'] || dataMap['curreny'] || 'RUB';
+    
     // Преобразуем даты
     const parseDate = (dateValue) => {
       if (typeof dateValue === 'number') {
-        // Excel serial date
-        const excelEpoch = new Date(1900, 0, 1);
-        const date = new Date(excelEpoch.getTime() + (dateValue - 1) * 24 * 60 * 60 * 1000);
+        // Excel serial date (учитываем баг Excel с 1900 годом)
+        // Excel считает 1900 високосным, хотя это не так
+        const date = new Date((dateValue - 25569) * 86400 * 1000);
         return date;
       } else if (typeof dateValue === 'string') {
         return new Date(dateValue);
@@ -76,14 +96,29 @@ const processExcelFile = (fileBuffer, fileName) => {
       return new Date(dateValue);
     };
     
+    // Удаляем лист Partner
+    const partnerSheetIndex = workbook.SheetNames.indexOf(partnerSheetName);
+    if (partnerSheetIndex > -1) {
+      workbook.SheetNames.splice(partnerSheetIndex, 1);
+      delete workbook.Sheets[partnerSheetName];
+      console.log(`🗑️  Лист "${partnerSheetName}" удален из файла`);
+    }
+    
+    // Создаем новый buffer без листа Partner
+    const modifiedBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
     return {
-      Inc: parseInt(data.Inc),
-      DateBeg: parseDate(data.DateBeg),
-      DateEnd: parseDate(data.DateEnd),
-      Amount: parseFloat(data.Amount),
-      PayAmount: parseFloat(data.PayAmount),
-      TaxAmount: parseFloat(data.TaxAmount),
-      fileName: fileName
+      Type: docType,
+      FullName: dataMap['full name'] || dataMap['fullname'] || '',
+      Created: dataMap['created'] ? parseDate(dataMap['created']) : new Date(),
+      DateBeg: parseDate(dataMap['period from']),
+      DateEnd: parseDate(dataMap['period till']),
+      Amount: parseFloat(dataMap['net']),
+      PayAmount: parseFloat(dataMap['invoice']),
+      TaxAmount: parseFloat(dataMap['tax']),
+      Currency: currency,
+      fileName: fileName,
+      modifiedBuffer: modifiedBuffer
     };
     
   } catch (error) {
@@ -108,18 +143,31 @@ router.post('/upload-files', [
       });
     }
     
+    // Получаем массив партнеров из formData
+    const partnerIds = req.body.partnerIds ? JSON.parse(req.body.partnerIds) : [];
+    
+    if (partnerIds.length !== files.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Количество партнеров не совпадает с количеством файлов'
+      });
+    }
+    
     const results = [];
     const errors = [];
     
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const partnerId = parseInt(partnerIds[i]);
+      
       try {
         // Обрабатываем Excel файл
         const fileData = processExcelFile(file.buffer, file.originalname);
         
         // Проверяем существование партнера
-        const partner = await db.getPartnerByInc(fileData.Inc);
+        const partner = await db.getPartnerByInc(partnerId);
         if (!partner) {
-          throw new Error(`Партнер с кодом ${fileData.Inc} не найден`);
+          throw new Error(`Партнер с кодом ${partnerId} не найден`);
         }
         
         // Создаем claim
@@ -129,15 +177,19 @@ router.post('/upload-files', [
           dateEnd: fileData.DateEnd,
           amount: fileData.Amount,
           payAmount: fileData.PayAmount,
-          taxAmount: fileData.TaxAmount
+          taxAmount: fileData.TaxAmount,
+          type: fileData.Type,
+          fullName: fileData.FullName,
+          created: fileData.Created,
+          currency: fileData.Currency
         });
         
-        // Сохраняем файл в базу данных
+        // Сохраняем файл в базу данных (без листа Partner)
         const documentId = await db.saveDocument(
           claimId,
           file.originalname,
-          file.buffer,
-          file.size,
+          fileData.modifiedBuffer,
+          fileData.modifiedBuffer.length,
           file.mimetype
         );
         
@@ -147,8 +199,11 @@ router.post('/upload-files', [
           partnerName: partner.Name,
           claimId: claimId,
           documentId: documentId,
+          type: fileData.Type,
+          fullName: fileData.FullName,
           period: `${fileData.DateBeg.toLocaleDateString()} - ${fileData.DateEnd.toLocaleDateString()}`,
           amount: fileData.Amount,
+          currency: fileData.Currency,
           status: 'uploaded'
         });
         
@@ -189,6 +244,49 @@ router.get('/unpublished-claims', async (req, res, next) => {
   }
 });
 
+// @desc    Получить список опубликованных документов
+// @route   GET /api/admin/published-claims
+// @access  Admin
+router.get('/published-claims', async (req, res, next) => {
+  try {
+    // Поддерживаем и MSSQL и SQLite адаптеры
+    if (typeof db.query === 'function') {
+      const result = await db.query(`
+        SELECT c.*, p.Name as PartnerName, p.Email as PartnerEmail, d.FileName, d.FileSize
+        FROM dbo.Claim c
+        INNER JOIN dbo.Partner p ON c.Partner = p.Inc
+        LEFT JOIN dbo.Document d ON c.Inc = d.Claim
+        WHERE c.Published = 1
+        ORDER BY c.PublishedAt DESC
+      `);
+
+      return res.json({ success: true, data: result.recordset });
+    }
+
+    if (typeof db.all === 'function') {
+      const rows = await db.all(`
+        SELECT c.inc,
+               COALESCE(c.fileName, d.filename) as fileName,
+               c.originalName, c.uploadedAt, c.partnerId, c.fileSize,
+               c.dateBeg, c.dateEnd, p.name as PartnerName, c.publishedAt, c.created as Created
+        FROM claim c
+        LEFT JOIN partner p ON c.partnerId = p.partnerId
+        LEFT JOIN document d ON d.claimId = c.inc
+        WHERE c.publishedAt IS NOT NULL
+        GROUP BY c.inc
+        ORDER BY c.publishedAt DESC
+      `);
+
+      return res.json({ success: true, data: rows });
+    }
+
+    return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @desc    Удалить неопубликованный документ
 // @route   DELETE /api/admin/claims/:id
 // @access  Admin
@@ -197,36 +295,222 @@ router.delete('/claims/:id', [
 ], async (req, res, next) => {
   try {
     const { id } = req.params;
+    const force = req.query && (req.query.force === 'true' || req.query.force === '1');
     
     // Проверяем что claim не опубликован
-    const result = await db.query(`
-      SELECT Published FROM dbo.Claim WHERE Inc = @id
-    `, { id });
-    
-    if (result.recordset.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Документ не найден'
-      });
+    if (typeof db.query === 'function') {
+      // MS SQL adapter
+      const result = await db.query(`
+        SELECT Published FROM dbo.Claim WHERE Inc = @id
+      `, { id });
+
+      if (!result || !result.recordset || result.recordset.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Документ не найден'
+        });
+      }
+
+      if (result.recordset[0].Published && !force) {
+        return res.status(400).json({
+          success: false,
+          message: 'Нельзя удалить опубликованный документ'
+        });
+      }
+
+      // Удаляем claim (документы удалятся автоматически по CASCADE)
+      await db.query(`
+        DELETE FROM dbo.Claim WHERE Inc = @id
+      `, { id });
+    } else if (typeof db.get === 'function') {
+      // SQLite adapter
+      const claim = await db.get('SELECT inc, publishedAt FROM claim WHERE inc = ?', [id]);
+
+      if (!claim) {
+        return res.status(404).json({
+          success: false,
+          message: 'Документ не найден'
+        });
+      }
+
+      if (claim.publishedAt && !force) {
+        return res.status(400).json({
+          success: false,
+          message: 'Нельзя удалить опубликованный документ'
+        });
+      }
+
+      // Удаляем claim (документы удалятся автоматически по CASCADE)
+      await db.run('DELETE FROM claim WHERE inc = ?', [id]);
+    } else {
+      // Неизвестный адаптер
+      return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
     }
-    
-    if (result.recordset[0].Published) {
-      return res.status(400).json({
-        success: false,
-        message: 'Нельзя удалить опубликованный документ'
-      });
-    }
-    
-    // Удаляем claim (документы удалятся автоматически по CASCADE)
-    await db.query(`
-      DELETE FROM dbo.Claim WHERE Inc = @id
-    `, { id });
     
     res.json({
       success: true,
       message: 'Документ успешно удален'
     });
     
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Получить детали документа
+// @route   GET /api/admin/claims/:id
+// @access  Admin
+router.get('/claims/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let claimData = null;
+    let fileBuffer = null;
+    
+    if (typeof db.query === 'function') {
+      // MS SQL adapter
+      const result = await db.query(`
+        SELECT c.*, p.Name as PartnerName, p.Email as PartnerEmail, 
+               d.FileName, d.FileSize, d.ContentType, d.FileBinary
+        FROM dbo.Claim c
+        INNER JOIN dbo.Partner p ON c.Partner = p.Inc
+        LEFT JOIN dbo.Document d ON c.Inc = d.Claim
+        WHERE c.Inc = @id
+      `, { id });
+
+      if (!result || !result.recordset || result.recordset.length === 0) {
+        return res.status(404).json({ success: false, message: 'Документ не найден' });
+      }
+
+      claimData = result.recordset[0];
+      fileBuffer = claimData.FileBinary;
+    }
+
+    if (typeof db.get === 'function') {
+      // SQLite adapter
+      const claim = await db.get(`
+        SELECT c.inc, c.fileName, c.originalName, c.uploadedAt, c.partnerId, 
+               c.fileSize, c.publishedAt, c.dateBeg, c.dateEnd, c.amount, 
+               c.payAmount, c.taxAmount, c.type, c.fullName, c.currency,
+               p.name as PartnerName, p.email as PartnerEmail
+        FROM claim c
+        LEFT JOIN partner p ON c.partnerId = p.partnerId
+        WHERE c.inc = ?
+      `, [id]);
+
+      if (!claim) {
+        return res.status(404).json({ success: false, message: 'Документ не найден' });
+      }
+
+      claimData = claim;
+      
+      // Get file info and content from document table (SQLite)
+      const doc = await db.get(`
+        SELECT filename, content, size, mimetype
+        FROM document
+        WHERE claimId = ?
+        ORDER BY inc DESC
+        LIMIT 1
+      `, [id]);
+      
+      if (doc) {
+        // Normalize fields to match MSSQL shape
+        claim.fileName = claim.fileName || doc.filename;
+        claim.fileSize = claim.fileSize || doc.size;
+        claim.contentType = doc.mimetype || claim.contentType;
+        fileBuffer = doc.content;
+      } else {
+        fileBuffer = null;
+      }
+    }
+
+    if (!claimData) {
+      return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
+    }
+
+    // Parse Excel file to get sheets data
+    let excelData = null;
+    if (fileBuffer) {
+      try {
+        const workbook = xlsx.read(fileBuffer);
+        excelData = {
+          sheets: []
+        };
+
+        workbook.SheetNames.forEach(sheetName => {
+          const worksheet = workbook.Sheets[sheetName];
+          // Convert to JSON with header row
+          const jsonData = xlsx.utils.sheet_to_json(worksheet, { 
+            header: 1, // Return as array of arrays
+            defval: '', // Default value for empty cells
+            raw: false // Format values as strings
+          });
+
+          excelData.sheets.push({
+            name: sheetName,
+            data: jsonData
+          });
+        });
+      } catch (parseError) {
+        console.error('Error parsing Excel file:', parseError);
+        // Continue without Excel data if parsing fails
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      data: claimData,
+      excelData: excelData 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Скачать документ
+// @route   GET /api/admin/claims/:id/download
+// @access  Admin
+router.get('/claims/:id/download', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (typeof db.query === 'function') {
+      // MS SQL adapter
+      const result = await db.query(`
+        SELECT d.FileName, d.FileBinary, d.ContentType
+        FROM dbo.Document d
+        INNER JOIN dbo.Claim c ON d.Claim = c.Inc
+        WHERE c.Inc = @id
+      `, { id });
+
+      if (!result || !result.recordset || result.recordset.length === 0) {
+        return res.status(404).json({ success: false, message: 'Файл не найден' });
+      }
+
+      const doc = result.recordset[0];
+      res.setHeader('Content-Type', doc.ContentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.FileName)}"`);
+      return res.send(doc.FileBinary);
+    }
+
+    if (typeof db.get === 'function') {
+      // SQLite adapter
+      const doc = await db.get(`
+        SELECT d.filename, d.content, d.mimetype
+        FROM document d
+        INNER JOIN claim c ON d.claimId = c.inc
+        WHERE c.inc = ?
+      `, [id]);
+
+      if (!doc) {
+        return res.status(404).json({ success: false, message: 'Файл не найден' });
+      }
+
+      res.setHeader('Content-Type', doc.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+      return res.send(doc.content);
+    }
+
+    return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
   } catch (error) {
     next(error);
   }
@@ -258,12 +542,95 @@ router.post('/publish-claims', [
       });
     }
     
-    // Публикуем документы простым запросом
+    // Публикуем документы и собираем информацию для отправки писем
     let publishedCount = 0;
+    const publishedByPartner = {}; // partnerId -> array of documents
+    
     for (const claimId of claimIds) {
+      // Get claim details before publishing
+      const claim = await db.get(`
+        SELECT c.inc, c.partnerId, c.created, c.dateBeg, c.dateEnd,
+               p.name as partnerName, p.email as partnerEmail, p.telegram as partnerTelegram,
+               d.filename as fileName
+        FROM claim c
+        LEFT JOIN partner p ON c.partnerId = p.partnerId
+        LEFT JOIN document d ON c.inc = d.claimId
+        WHERE c.inc = ? AND c.publishedAt IS NULL
+      `, [claimId]);
+      
+      if (!claim) continue;
+      
+      // Publish the claim
       const result = await db.run('UPDATE claim SET publishedAt = CURRENT_TIMESTAMP WHERE inc = ? AND publishedAt IS NULL', [claimId]);
+      
       if (result.changes > 0) {
         publishedCount++;
+        
+        // Group by partner for notifications
+        const partnerId = claim.partnerId;
+        if (!publishedByPartner[partnerId]) {
+          publishedByPartner[partnerId] = {
+            partnerName: claim.partnerName,
+            partnerEmail: claim.partnerEmail,
+            partnerTelegram: claim.partnerTelegram,
+            documents: []
+          };
+        }
+        
+        // Format period
+        const formatDate = (date) => {
+          if (!date) return '—';
+          try {
+            return new Date(date).toLocaleDateString('ru-RU');
+          } catch (e) {
+            return '—';
+          }
+        };
+        
+        const period = claim.dateBeg && claim.dateEnd 
+          ? `${formatDate(claim.dateBeg)} — ${formatDate(claim.dateEnd)}`
+          : '—';
+        
+        publishedByPartner[partnerId].documents.push({
+          fileName: claim.fileName || 'Документ',
+          period: period,
+          date: formatDate(claim.created || new Date())
+        });
+      }
+    }
+    
+    // Send notifications to partners (email and telegram)
+    for (const partnerId in publishedByPartner) {
+      const { partnerName, partnerEmail, partnerTelegram, documents } = publishedByPartner[partnerId];
+      
+      // Send email notification
+      if (partnerEmail && documents.length > 0) {
+        try {
+          await emailService.sendDocumentsPublishedNotification(
+            partnerEmail,
+            partnerName,
+            documents
+          );
+          console.log(`📧 Письмо отправлено партнёру ${partnerName} (${partnerEmail})`);
+        } catch (emailError) {
+          console.error(`❌ Ошибка отправки письма партнёру ${partnerName}:`, emailError.message);
+          // Continue even if email fails
+        }
+      }
+      
+      // Send Telegram notification
+      if (partnerTelegram && documents.length > 0) {
+        try {
+          await telegramService.sendDocumentsPublishedNotification(
+            partnerTelegram,
+            partnerName,
+            documents
+          );
+          console.log(`📱 Telegram уведомление отправлено партнёру ${partnerName} (${partnerTelegram})`);
+        } catch (telegramError) {
+          console.error(`❌ Ошибка отправки Telegram уведомления партнёру ${partnerName}:`, telegramError.message);
+          // Continue even if telegram fails
+        }
       }
     }
     
@@ -271,6 +638,52 @@ router.post('/publish-claims', [
       success: true,
       message: `Опубликовано ${publishedCount} документов`,
       publishedCount: publishedCount
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Снять публикацию документов
+// @route   POST /api/admin/unpublish-claims
+// @access  Admin
+router.post('/unpublish-claims', [
+  body('claimIds').isArray().withMessage('claimIds должен быть массивом'),
+  logAction('unpublish_claims', 'claim')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ошибки валидации',
+        errors: errors.array()
+      });
+    }
+    
+    const { claimIds } = req.body;
+    
+    if (claimIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Не указаны документы для снятия публикации'
+      });
+    }
+    
+    // Снимаем публикацию
+    let unpublishedCount = 0;
+    for (const claimId of claimIds) {
+      const result = await db.run('UPDATE claim SET publishedAt = NULL WHERE inc = ? AND publishedAt IS NOT NULL', [claimId]);
+      if (result.changes > 0) {
+        unpublishedCount++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Снята публикация ${unpublishedCount} документов`,
+      unpublishedCount: unpublishedCount
     });
 
   } catch (error) {

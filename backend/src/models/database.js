@@ -150,12 +150,12 @@ class Database {
   }
 
   async createClaim(claimData) {
-    const { partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount } = claimData;
+    const { partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount, type, fullName, created, currency } = claimData;
     const result = await this.query(`
-      INSERT INTO dbo.Claim (Partner, DateBeg, DateEnd, Amount, PayAmount, TaxAmount)
+      INSERT INTO dbo.Claim (Partner, DateBeg, DateEnd, Amount, PayAmount, TaxAmount, Type, FullName, Created, Currency)
       OUTPUT INSERTED.Inc
-      VALUES (@partnerId, @dateBeg, @dateEnd, @amount, @payAmount, @taxAmount)
-    `, { partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount });
+      VALUES (@partnerId, @dateBeg, @dateEnd, @amount, @payAmount, @taxAmount, @type, @fullName, @created, @currency)
+    `, { partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount, type: type || '', fullName: fullName || '', created: created || new Date(), currency: currency || 'RUB' });
     return result.recordset[0].Inc;
   }
 

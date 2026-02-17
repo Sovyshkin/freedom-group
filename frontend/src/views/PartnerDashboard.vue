@@ -39,7 +39,7 @@
               @input="handleSearch"
             />
             <button @click="toggleFilters" class="filter-btn">
-              <i class="fas fa-filter"></i> Фильтры
+              <img src="@/assets/filter.png" alt="filter" width="18" height="18" style="vertical-align:middle; margin-right:8px;"/> Фильтры
             </button>
           </div>
         </div>
@@ -89,27 +89,36 @@
                 </th>
                 <th>Сумма по счету</th>
                 <th>Налог</th>
-                <th>Скачать</th>
+                <th>Файл</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(doc, index) in paginatedDocuments" :key="doc.id">
-                <td>{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-                <td>{{ formatDate(doc.publishedAt) }}</td>
-                <td>{{ doc.period }}</td>
-                <td class="amount">{{ formatMoney(doc.amount) }}</td>
-                <td class="amount">{{ formatMoney(doc.payAmount) }}</td>
-                <td class="amount">{{ formatMoney(doc.taxAmount) }}</td>
-                <td>
-                  <button 
-                    @click="downloadDocument(doc)" 
-                    class="btn btn-download"
-                    :disabled="downloading === doc.documentId"
-                  >
-                    <i v-if="downloading === doc.documentId" class="fas fa-spinner fa-spin"></i>
-                    <i v-else class="fas fa-download"></i>
-                    {{ doc.fileName }}
-                  </button>
+                <td data-label="№">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+                <td data-label="Дата создания">{{ formatDate(doc.publishedAt) }}</td>
+                <td data-label="Период">{{ doc.period }}</td>
+                <td data-label="Чистая сумма" class="amount">{{ formatMoney(doc.amount) }}</td>
+                <td data-label="Сумма по счету" class="amount">{{ formatMoney(doc.payAmount) }}</td>
+                <td data-label="Налог" class="amount">{{ formatMoney(doc.taxAmount) }}</td>
+                <td data-label="Файл">
+                  <div class="doc-actions">
+                    <button 
+                      @click="viewDocument(doc)" 
+                      class="btn btn-sm btn-outline-blue"
+                      title="Просмотр"
+                    >
+                      <i class="fas fa-eye"></i>
+                    </button>
+                    <button 
+                      @click="downloadDocument(doc)" 
+                      class="btn btn-sm btn-primary"
+                      :disabled="downloading === doc.documentId"
+                      title="Скачать"
+                    >
+                      <i v-if="downloading === doc.documentId" class="fas fa-spinner fa-spin"></i>
+                      <img v-else src="@/assets/download.png" alt="download" width="16" height="16" style="vertical-align:middle;" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -149,6 +158,16 @@
       </div>
     </div>
     
+    <!-- View Document Modal -->
+    <ExcelViewer
+      :show="showViewDocumentModal"
+      :document="currentDocument"
+      :excelData="excelData"
+      :loading="loadingCurrentDocument"
+      @close="showViewDocumentModal = false"
+      @download="downloadDocument(currentDocument)"
+    />
+
     <!-- Notifications -->
     <AppNotifications />
   </div>
@@ -158,6 +177,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import AppLoader from '@/components/AppLoader.vue'
 import AppNotifications from '@/components/AppNotifications.vue'
+import ExcelViewer from '@/components/ExcelViewer.vue'
 import { useNotificationStore } from '@/stores/notifications'
 import api from '@/plugins/axios'
 
@@ -169,6 +189,12 @@ const downloading = ref(null)
 const documents = ref([])
 const stats = ref({})
 const user = ref(null)
+
+// View document modal
+const showViewDocumentModal = ref(false)
+const loadingCurrentDocument = ref(false)
+const currentDocument = ref(null)
+const excelData = ref(null)
 
 // Search and filters
 const searchQuery = ref('')
@@ -256,9 +282,10 @@ const loadData = async () => {
 
 const downloadDocument = async (doc) => {
   try {
-    downloading.value = doc.documentId
+    downloading.value = doc.documentId || doc.inc
     
-    const response = await api.get(`/partner/documents/${doc.documentId}/download`, {
+    const documentId = doc.documentId || doc.inc
+    const response = await api.get(`/partner/documents/${documentId}/download`, {
       responseType: 'blob'
     })
     
@@ -284,6 +311,27 @@ const downloadDocument = async (doc) => {
     })
   } finally {
     downloading.value = null
+  }
+}
+
+const viewDocument = async (doc) => {
+  try {
+    loadingCurrentDocument.value = true
+    showViewDocumentModal.value = true
+    
+    const documentId = doc.documentId || doc.inc
+    const response = await api.get(`/partner/documents/${documentId}`)
+    currentDocument.value = response.data.data
+    excelData.value = response.data.excelData
+  } catch (error) {
+    console.error('Ошибка загрузки документа:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки документа'
+    })
+    showViewDocumentModal.value = false
+  } finally {
+    loadingCurrentDocument.value = false
   }
 }
 
@@ -352,8 +400,28 @@ const changePage = (page) => {
   }
 }
 
+const toTimestampMs = (value) => {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') {
+    return value < 1e12 ? value * 1000 : value
+  }
+  if (/^\d+$/.test(String(value))) {
+    const n = parseInt(value, 10)
+    return n < 1e12 ? n * 1000 : n
+  }
+  if (typeof value === 'string' && /^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value)) {
+    const iso = value.replace(' ', 'T').replace(/\//g, '-') + 'Z'
+    const parsedIso = Date.parse(iso)
+    return isNaN(parsedIso) ? null : parsedIso
+  }
+  const parsed = Date.parse(value)
+  return isNaN(parsed) ? null : parsed
+}
+
 const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('ru-RU')
+  const ts = toTimestampMs(date)
+  if (!ts) return ''
+  return new Date(ts).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })
 }
 
 const formatMoney = (amount) => {
@@ -606,6 +674,32 @@ onMounted(() => {
   background: #545b62;
 }
 
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.btn-outline-blue {
+  background: transparent;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-outline-blue:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.doc-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .btn-download {
   background: #28a745;
   color: white;
@@ -679,20 +773,18 @@ onMounted(() => {
   color: #6c757d;
 }
 
-
-
 @media (max-width: 768px) {
   .dashboard-container {
-    padding: 16px;
+    padding: 12px;
   }
   
   .stats-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 12px;
   }
   
   .stat-card {
-    padding: 12px;
+    padding: 14px;
     gap: 8px;
   }
   
@@ -701,45 +793,143 @@ onMounted(() => {
   }
   
   .stat-value {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
   }
   
   .stat-label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
   }
   
   .section-header {
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     align-items: stretch;
+    padding: 14px 16px;
+  }
+  
+  .section-header h2 {
+    font-size: 18px;
   }
   
   .search-controls {
     justify-content: stretch;
+    flex-direction: column;
+    gap: 8px;
   }
   
   .search-input {
     flex: 1;
+    width: 100%;
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+  
+  .filter-btn {
+    width: 100%;
   }
   
   .filter-row {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
+  }
+  
+  .filter-group {
+    width: 100%;
   }
   
   .filter-group input {
     width: 100%;
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+  
+  .filter-actions {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .filter-actions .btn {
+    flex: 1;
   }
   
   .pagination {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+  }
+  
+  .pagination-info {
+    font-size: 13px;
+    text-align: center;
+  }
+  
+  /* Documents table -> card layout */
+  .documents-table thead {
+    display: none;
   }
   
   .documents-table {
     display: block;
-    overflow-x: auto;
-    white-space: nowrap;
+  }
+  
+  .documents-table tbody {
+    display: block;
+  }
+  
+  .documents-table tbody tr {
+    display: block;
+    background: white;
+    margin-bottom: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+  }
+  
+  .documents-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border: none;
+    text-align: right;
+  }
+  
+  .documents-table td::before {
+    content: attr(data-label);
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    margin-right: 12px;
+    text-align: left;
+    flex: 1;
+  }
+  
+  .documents-table td:last-child {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .documents-table td:last-child::before {
+    margin-bottom: 8px;
+  }
+  
+  .doc-actions {
+    width: 100%;
+    flex-direction: row;
+    gap: 8px;
+  }
+  
+  .doc-actions .btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+  
+  .amount {
+    font-weight: 600;
   }
 }
 </style>

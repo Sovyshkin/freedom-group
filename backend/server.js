@@ -28,28 +28,31 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS configuration
+// В development проще разрешить все origins (удобно для локальной разработки).
+// В production оставляем строгую проверку по списку allowedOrigins.
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+  'http://localhost:8081',
+  'http://127.0.0.1:8080',
+  'http://127.0.0.1:8081',
+  'http://localhost',
+  'http://127.0.0.1',
+];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    // В development режиме разрешаем все origins
+    // Браузер может отправлять запросы без Origin (например при сервер-сервер запросах)
+    if (!origin) return callback(null, true);
+
     if (process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    
-    // В production используем строгую проверку
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:8080',
-      'http://localhost:8081',
-      'http://127.0.0.1:8080',
-      'http://127.0.0.1:8081',
-      'http://localhost',
-      'http://127.0.0.1',
-    ];
-    
+
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
+
     console.log('❌ Заблокированный origin:', origin);
     callback(new Error('Доступ запрещен CORS policy'));
   },
@@ -58,6 +61,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+// Обработка preflight-запросов для всех маршрутов (OPTIONS)
+app.options('*', cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -93,6 +98,11 @@ async function startServer() {
     const db = require('./src/models/database');
     await db.connect();
     console.log('✅ База данных инициализирована');
+    
+    // Передаем базу в Telegram сервис
+    const telegramService = require('./src/services/telegramService');
+    telegramService.setDatabase(db);
+    console.log('✅ Telegram сервис подключен к базе данных');
 
     const HOST = process.env.HOST || '0.0.0.0';
     const LOCAL_IP = process.env.LOCAL_IP || '193.246.162.61';

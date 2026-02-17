@@ -59,7 +59,9 @@ router.get('/documents', [
     // Форматируем данные для фронтенда
     const formattedDocuments = documents.map(doc => ({
       id: doc.ClaimId,
-      createdAt: doc.PublishedAt,
+      // Use Created (from Partner sheet) if present, otherwise fall back to PublishedAt
+      publishedAt: doc.PublishedAt,
+      createdAt: doc.Created || doc.created || doc.PublishedAt,
       period: `${new Date(doc.DateBeg).toLocaleDateString('ru-RU')} - ${new Date(doc.DateEnd).toLocaleDateString('ru-RU')}`,
       dateBeg: doc.DateBeg,
       dateEnd: doc.DateEnd,
@@ -76,6 +78,96 @@ router.get('/documents', [
       documents: formattedDocuments
     });
     
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    Получить документ с Excel данными
+// @route   GET /api/partner/documents/:documentId
+// @access  Partner
+router.get('/documents/:documentId', [
+  logAction('view_document', 'document')
+], async (req, res, next) => {
+  try {
+    const { documentId } = req.params;
+    const partnerId = req.user.partnerId;
+    
+    let claimData = null;
+    let fileBuffer = null;
+    
+    if (typeof db.get === 'function') {
+      // SQLite adapter
+      const claim = await db.get(`
+        SELECT c.inc, c.fileName, c.originalName, c.uploadedAt, c.partnerId, 
+               c.fileSize, c.publishedAt, c.dateBeg, c.dateEnd, c.amount, 
+               c.payAmount, c.taxAmount, c.type, c.fullName, c.currency,
+               p.name as PartnerName, p.email as PartnerEmail
+        FROM claim c
+        LEFT JOIN partner p ON c.partnerId = p.partnerId
+        WHERE c.inc = ? AND c.partnerId = ? AND c.publishedAt IS NOT NULL
+      `, [documentId, partnerId]);
+
+      if (!claim) {
+        return res.status(404).json({ success: false, message: 'Документ не найден или у вас нет доступа' });
+      }
+
+      claimData = claim;
+      
+      // Get file info and content from document table
+      const doc = await db.get(`
+        SELECT filename, content, size, mimetype
+        FROM document
+        WHERE claimId = ?
+        ORDER BY inc DESC
+        LIMIT 1
+      `, [documentId]);
+      
+      if (doc) {
+        claim.fileName = claim.fileName || doc.filename;
+        claim.fileSize = claim.fileSize || doc.size;
+        claim.contentType = doc.mimetype || claim.contentType;
+        fileBuffer = doc.content;
+      }
+    }
+
+    if (!claimData) {
+      return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
+    }
+
+    // Parse Excel file to get sheets data
+    let excelData = null;
+    if (fileBuffer) {
+      try {
+        const xlsx = require('xlsx');
+        const workbook = xlsx.read(fileBuffer);
+        excelData = {
+          sheets: []
+        };
+
+        workbook.SheetNames.forEach(sheetName => {
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = xlsx.utils.sheet_to_json(worksheet, { 
+            header: 1,
+            defval: '',
+            raw: false
+          });
+
+          excelData.sheets.push({
+            name: sheetName,
+            data: jsonData
+          });
+        });
+      } catch (parseError) {
+        console.error('Error parsing Excel file:', parseError);
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      data: claimData,
+      excelData: excelData 
+    });
   } catch (error) {
     next(error);
   }
@@ -269,62 +361,121 @@ router.get('/documents/search', async (req, res, next) => {
       amountTo, 
       fileName 
     } = req.query;
-    
-    let whereClause = 'WHERE PartnerId = @partnerId';
-    const params = { partnerId };
-    
-    if (dateFrom) {
-      whereClause += ' AND DateBeg >= @dateFrom';
-      params.dateFrom = new Date(dateFrom);
+    // Support both MSSQL and SQLite adapters
+    if (typeof db.query === 'function') {
+      let whereClause = 'WHERE PartnerId = @partnerId';
+      const params = { partnerId };
+
+      if (dateFrom) {
+        whereClause += ' AND DateBeg >= @dateFrom';
+        params.dateFrom = new Date(dateFrom);
+      }
+
+      if (dateTo) {
+        whereClause += ' AND DateEnd <= @dateTo';
+        params.dateTo = new Date(dateTo);
+      }
+
+      if (amountFrom) {
+        whereClause += ' AND Amount >= @amountFrom';
+        params.amountFrom = parseFloat(amountFrom);
+      }
+
+      if (amountTo) {
+        whereClause += ' AND Amount <= @amountTo';
+        params.amountTo = parseFloat(amountTo);
+      }
+
+      if (fileName) {
+        whereClause += ' AND FileName LIKE @fileName';
+        params.fileName = `%${fileName}%`;
+      }
+
+      const result = await db.query(`
+        SELECT ClaimId, PublishedAt, DateBeg, DateEnd, Amount, PayAmount, TaxAmount, 
+               FileName, FileSize, DocumentId
+        FROM dbo.vw_PartnerDocuments 
+        ${whereClause}
+        ORDER BY PublishedAt DESC
+      `, params);
+
+      const formattedDocuments = result.recordset.map(doc => ({
+        id: doc.ClaimId,
+        publishedAt: doc.PublishedAt,
+        period: `${new Date(doc.DateBeg).toLocaleDateString('ru-RU')} - ${new Date(doc.DateEnd).toLocaleDateString('ru-RU')}`,
+        dateBeg: doc.DateBeg,
+        dateEnd: doc.DateEnd,
+        amount: doc.Amount,
+        payAmount: doc.PayAmount,
+        taxAmount: doc.TaxAmount,
+        fileName: doc.FileName,
+        fileSize: doc.FileSize,
+        documentId: doc.DocumentId
+      }));
+
+      return res.json({ success: true, documents: formattedDocuments, total: formattedDocuments.length });
     }
-    
-    if (dateTo) {
-      whereClause += ' AND DateEnd <= @dateTo';
-      params.dateTo = new Date(dateTo);
+
+    if (typeof db.all === 'function') {
+      // Build SQLite query with positional params
+      let sql = `
+        SELECT c.inc as ClaimId, c.publishedAt as PublishedAt, c.created as Created, c.dateBeg as DateBeg, c.dateEnd as DateEnd,
+               c.amount as Amount, c.payAmount as PayAmount, c.taxAmount as TaxAmount,
+               d.filename as FileName, d.size as FileSize, d.inc as DocumentId
+        FROM claim c
+        LEFT JOIN document d ON c.inc = d.claimId
+        WHERE c.partnerId = ? AND c.publishedAt IS NOT NULL
+      `;
+      const params = [partnerId];
+
+      if (dateFrom) {
+        sql += ' AND c.dateBeg >= ?';
+        params.push(dateFrom);
+      }
+
+      if (dateTo) {
+        sql += ' AND c.dateEnd <= ?';
+        params.push(dateTo);
+      }
+
+      if (amountFrom) {
+        sql += ' AND c.amount >= ?';
+        params.push(parseFloat(amountFrom));
+      }
+
+      if (amountTo) {
+        sql += ' AND c.amount <= ?';
+        params.push(parseFloat(amountTo));
+      }
+
+      if (fileName) {
+        sql += ' AND d.filename LIKE ?';
+        params.push(`%${fileName}%`);
+      }
+
+      sql += ' ORDER BY c.publishedAt DESC';
+
+      const rows = await db.all(sql, params);
+
+      const formattedDocuments = rows.map(doc => ({
+        id: doc.ClaimId,
+        publishedAt: doc.PublishedAt,
+        createdAt: doc.Created || doc.created || doc.PublishedAt,
+        period: `${new Date(doc.DateBeg).toLocaleDateString('ru-RU')} - ${new Date(doc.DateEnd).toLocaleDateString('ru-RU')}`,
+        dateBeg: doc.DateBeg,
+        dateEnd: doc.DateEnd,
+        amount: doc.Amount,
+        payAmount: doc.PayAmount,
+        taxAmount: doc.TaxAmount,
+        fileName: doc.FileName,
+        fileSize: doc.FileSize,
+        documentId: doc.DocumentId
+      }));
+
+      return res.json({ success: true, documents: formattedDocuments, total: formattedDocuments.length });
     }
-    
-    if (amountFrom) {
-      whereClause += ' AND Amount >= @amountFrom';
-      params.amountFrom = parseFloat(amountFrom);
-    }
-    
-    if (amountTo) {
-      whereClause += ' AND Amount <= @amountTo';
-      params.amountTo = parseFloat(amountTo);
-    }
-    
-    if (fileName) {
-      whereClause += ' AND FileName LIKE @fileName';
-      params.fileName = `%${fileName}%`;
-    }
-    
-    const result = await db.query(`
-      SELECT ClaimId, PublishedAt, DateBeg, DateEnd, Amount, PayAmount, TaxAmount, 
-             FileName, FileSize, DocumentId
-      FROM dbo.vw_PartnerDocuments 
-      ${whereClause}
-      ORDER BY PublishedAt DESC
-    `, params);
-    
-    const formattedDocuments = result.recordset.map(doc => ({
-      id: doc.ClaimId,
-      publishedAt: doc.PublishedAt,
-      period: `${new Date(doc.DateBeg).toLocaleDateString('ru-RU')} - ${new Date(doc.DateEnd).toLocaleDateString('ru-RU')}`,
-      dateBeg: doc.DateBeg,
-      dateEnd: doc.DateEnd,
-      amount: doc.Amount,
-      payAmount: doc.PayAmount,
-      taxAmount: doc.TaxAmount,
-      fileName: doc.FileName,
-      fileSize: doc.FileSize,
-      documentId: doc.DocumentId
-    }));
-    
-    res.json({
-      success: true,
-      documents: formattedDocuments,
-      total: formattedDocuments.length
-    });
+
+    return res.status(500).json({ success: false, message: 'Ошибка базы данных' });
     
   } catch (error) {
     next(error);

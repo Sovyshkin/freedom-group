@@ -3,13 +3,17 @@
     <!-- Main content -->
     <div class="dashboard-container">
       <!-- Stats cards -->
-      <div class="stats-grid">
+          <div v-if="loadingStats">
+            <AppLoader />
+          </div>
+          <div v-else class="stats-grid">
         <div class="stat-card">
           <div class="stat-content">
             <div class="stat-value">{{ stats.totalPartners || 0 }}</div>
             <div class="stat-label">Всего партнеров</div>
           </div>
         </div>
+        
         
         <div class="stat-card">
           <div class="stat-content">
@@ -38,93 +42,24 @@
         </button>
       </div>
       
-      <!-- Upload Files Tab -->
-      <div v-if="activeTab === 'upload'" class="tab-content">
-        <div class="upload-section">
-          <h3>Загрузка Excel файлов</h3>
-          
-          <div class="upload-area" :class="{ dragover: isDragover }" 
-               @dragover.prevent="isDragover = true"
-               @dragleave.prevent="isDragover = false"
-               @drop.prevent="handleDrop">
-            <input 
-              ref="fileInput"
-              type="file" 
-              multiple 
-              accept=".xlsx,.xls"
-              @change="handleFileSelect"
-              style="display: none"
-            />
-            
-            <div class="upload-content">
-              <div class="upload-icon">
-                <i class="fas fa-cloud-upload-alt"></i>
-              </div>
-              <p>Перетащите Excel файлы сюда или <button @click="$refs.fileInput.click()" class="link-btn">выберите файлы</button></p>
-              <p class="upload-hint">Поддерживаются файлы: .xlsx, .xls (максимум 50 файлов)</p>
-            </div>
-          </div>
-          
-          <!-- Selected files -->
-          <div v-if="selectedFiles.length > 0" class="selected-files">
-            <h4>Выбранные файлы ({{ selectedFiles.length }})</h4>
-            <div class="file-list">
-              <div v-for="(file, index) in selectedFiles" :key="index" class="file-item">
-                <div class="file-info">
-                  <div class="file-name">{{ file.name }}</div>
-                  <div class="file-size">{{ formatFileSize(file.size) }}</div>
-                </div>
-                <button @click="removeFile(index)" class="remove-btn">
-                  <i class="fas fa-times"></i>
-                </button>
-              </div>
-            </div>
-            
-            <div class="upload-actions">
-              <button @click="uploadFiles" :disabled="uploading" class="btn btn-primary">
-                <i v-if="uploading" class="fas fa-spinner fa-spin"></i>
-                <i v-else class="fas fa-upload"></i>
-                {{ uploading ? 'Загрузка...' : 'Загрузить файлы' }}
-              </button>
-              <button @click="clearFiles" class="btn btn-secondary">
-                <i class="fas fa-trash"></i> Очистить
-              </button>
-            </div>
-          </div>
-          
-          <!-- Upload results -->
-          <div v-if="uploadResults.length > 0" class="upload-results">
-            <h4>Результаты загрузки</h4>
-            <div class="results-summary">
-              <span class="success"><i class="fas fa-check-circle"></i> Успешно: {{ uploadResults.filter(r => r.success).length }}</span>
-              <span class="error"><i class="fas fa-times-circle"></i> Ошибки: {{ uploadResults.filter(r => !r.success).length }}</span>
-            </div>
-            
-            <div class="results-list">
-              <div v-for="result in uploadResults" :key="result.fileName" class="result-item" :class="{ error: !result.success }">
-                <div class="result-file">{{ result.fileName }}</div>
-                <div class="result-status">
-                  {{ result.success ? 'Успешно загружен' : result.error }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
       <!-- Documents Tab -->
       <div v-if="activeTab === 'documents'" class="tab-content">
         <div class="documents-section">
           <div class="section-header">
-            <h3>Неопубликованные документы</h3>
-            <div class="actions">
+            <h3>Все документы</h3>
+                    <div class="actions">
+                      <div class="doc-filter">
+                        <button :class="['btn-small', { active: documentsFilter === 'unpublished' }]" @click="setDocumentsFilter('unpublished')">Загруженные</button>
+                        <button :class="['btn-small', { active: documentsFilter === 'published' }]" @click="setDocumentsFilter('published')">Опубликованные</button>
+                      </div>
               <button @click="refreshDocuments" class="btn btn-secondary">
-                <i class="fas fa-sync-alt"></i> Обновить
+                <img src="@/assets/refresh.png" alt="refresh" width="18" height="18" class="icon-img-invert" />
               </button>
               <button 
+                v-if="documentsFilter === 'unpublished'"
                 @click="publishAllDocuments" 
                 :disabled="!unpublishedClaims.length || publishing"
-                class="btn btn-success"
+                class="btn btn-primary"
               >
                 <i v-if="publishing" class="fas fa-spinner fa-spin"></i>
                 Опубликовать все ({{ unpublishedClaims.length }})
@@ -135,7 +70,9 @@
           <AppLoader v-if="loadingDocuments" />
           
           <div v-else-if="unpublishedClaims.length === 0" class="empty-state">
-            <div class="empty-icon">📄</div>
+            <div class="empty-icon">
+              <img src="@/assets/docs.png" alt="docs" width="32" height="32" />
+            </div>
             <h3>Нет документов для публикации</h3>
             <p>Все загруженные документы уже опубликованы</p>
           </div>
@@ -150,42 +87,55 @@
                     @change="toggleSelectAll"
                   />
                 </th>
+                <th>Файл</th>
                 <th>Код партнера</th>
                 <th>Имя партнера</th>
                 <th>Дата создания</th>
                 <th>Период</th>
-                <th>Файл</th>
                 <th>Статус</th>
                 <th>Действия</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="claim in unpublishedClaims" :key="claim.Inc">
-                <td>
+              <tr v-for="claim in unpublishedClaims" :key="getClaimId(claim)">
+                <td data-label="Выбрать">
                   <input 
                     type="checkbox" 
-                    :value="claim.Inc"
+                    :value="getClaimId(claim)"
                     v-model="selectedClaims"
                   />
                 </td>
-                <td>{{ claim.Partner }}</td>
-                <td>{{ claim.PartnerName }}</td>
-                <td>{{ formatDate(claim.Cdate) }}</td>
-                <td>{{ formatPeriod(claim.DateBeg, claim.DateEnd) }}</td>
-                <td>{{ claim.FileName }}</td>
-                <td>
-                  <span :class="['status', claim.Status]">
-                    {{ getStatusLabel(claim.Status) }}
+                <td data-label="Файл">{{ claim.FileName || claim.fileName || claim.originalName || '—' }}</td>
+                <td data-label="Код партнера">{{ claim.Partner ?? claim.partnerId ?? claim.Inc ?? claim.inc ?? '—' }}</td>
+                <td data-label="Имя партнера">{{ claim.PartnerName ?? claim.PartnerName ?? claim.Name ?? claim.name ?? '—' }}</td>
+                <td data-label="Дата создания">{{ formatDate(claim.Created || claim.created || claim.Cdate || claim.uploadedAt || claim.uploaded_at || claim.createdAt) }}</td>
+                <td data-label="Период">{{ formatPeriod(claim.DateBeg || claim.dateBeg || claim.dateBegRaw, claim.DateEnd || claim.dateEnd || claim.dateEndRaw) }}</td>
+                <td data-label="Статус">
+                  <span :class="['status', claim.Status || claim.status || (claim.publishedAt || claim.PublishedAt ? 'published' : 'uploaded')]">
+                    {{ getStatusLabel(claim.Status ?? claim.status ?? (claim.publishedAt || claim.PublishedAt ? 'published' : 'uploaded')) }}
                   </span>
                 </td>
-                <td>
+                <td data-label="Действия">
                   <div class="action-buttons">
-                    <button @click="publishDocument(claim.Inc)" class="btn btn-sm btn-success">
-                      Опубликовать
-                    </button>
-                    <button @click="deleteDocument(claim.Inc)" class="btn btn-sm btn-danger">
-                      Удалить
-                    </button>
+                    <template v-if="documentsFilter === 'unpublished'">
+                      <button @click="publishDocument(getClaimId(claim))" class="btn btn-sm btn-primary">
+                        Опубликовать
+                      </button>
+                      <button @click="deleteDocument(getClaimId(claim))" class="btn btn-sm btn-outline-blue">
+                        Удалить
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button @click="viewDocument(getClaimId(claim))" class="btn btn-sm btn-outline-blue">
+                        Просмотр
+                      </button>
+                      <button @click="unpublishDocument(getClaimId(claim))" class="btn btn-sm btn-secondary">
+                        Снять публикацию
+                      </button>
+                      <button @click="deleteDocument(getClaimId(claim))" class="btn btn-sm btn-danger">
+                        Удалить
+                      </button>
+                    </template>
                   </div>
                 </td>
               </tr>
@@ -193,12 +143,12 @@
           </table>
           
           <!-- Bulk actions -->
-          <div v-if="selectedClaims.length > 0" class="bulk-actions">
+          <div v-if="selectedClaims.length > 0 && documentsFilter === 'unpublished'" class="bulk-actions">
             <span>Выбрано: {{ selectedClaims.length }}</span>
-            <button @click="publishSelectedDocuments" class="btn btn-success">
+            <button @click="publishSelectedDocuments" class="btn btn-primary">
               Опубликовать выбранные
             </button>
-            <button @click="selectedClaims = []" class="btn btn-secondary">
+            <button @click="selectedClaims = []" class="btn btn-outline-blue">
               Снять выделение
             </button>
           </div>
@@ -210,9 +160,17 @@
         <div class="partners-section">
           <div class="section-header">
             <h3>Управление партнерами</h3>
-            <button @click="showCreatePartnerModal = true" class="btn btn-primary">
-              <i class="fas fa-plus"></i> Добавить партнера
-            </button>
+            <div class="header-actions">
+              <input
+                v-model="partnerSearchQuery"
+                type="text"
+                placeholder="Поиск по имени, email, коду или логину..."
+                class="search-input-header"
+              />
+              <button @click="showCreatePartnerModal = true" class="btn btn-primary">
+                <img src="@/assets/add.png" alt="add" width="18" height="18" class="icon-img-invert" />
+              </button>
+            </div>
           </div>
           
           <AppLoader v-if="loadingPartners" />
@@ -225,42 +183,33 @@
                 <th>Email</th>
                 <th>Telegram</th>
                 <th>Логин</th>
-                <th>Пароль установлен</th>
                 <th>Последний вход</th>
                 <th>Создан</th>
-                <th>Статус</th>
                 <th>Действия</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="partner in partners" :key="partner.Inc">
-                <td>{{ partner.Inc }}</td>
-                <td>{{ partner.Name }}</td>
-                <td>{{ partner.Email }}</td>
-                <td>{{ partner.Telegram || '—' }}</td>
-                <td>{{ partner.Alias }}</td>
-                <td>
-                  <span :class="['password-status', partner.PasswordSet ? 'set' : 'not-set']">
-                    {{ partner.PasswordSet ? '✅ Да' : '❌ Нет' }}
-                  </span>
-                </td>
-                <td>{{ formatDateTime(partner.LastVisit) || '—' }}</td>
-                <td>{{ formatDate(partner.CreatedAt) }}</td>
-                <td>
-                  <span :class="['status', partner.IsActive ? 'active' : 'inactive']">
-                    {{ partner.IsActive ? 'Активен' : 'Неактивен' }}
-                  </span>
-                </td>
-                <td>
+              <tr v-for="partner in filteredPartners" :key="partner.Inc">
+                <td data-label="ID">{{ partner.Inc }}</td>
+                <td data-label="Имя">{{ partner.Name }}</td>
+                <td data-label="Email">{{ partner.Email }}</td>
+                <td data-label="Telegram">{{ partner.Telegram || '—' }}</td>
+                <td data-label="Логин">{{ partner.Alias }}</td>
+                <td data-label="Последний вход">{{ formatDateTime(partner.LastVisit) || '—' }}</td>
+                <td data-label="Создан">{{ formatDate(partner.CreatedAt) }}</td>
+                <td data-label="Действия">
                   <div class="action-buttons">
+                    <button @click="openUploadForPartner(partner)" class="btn-icon btn-upload" title="Загрузить файлы">
+                      <img src="@/assets/upload.png" alt="upload" width="18" height="18" />
+                    </button>
                     <button @click="editPartner(partner)" class="btn-icon btn-edit" title="Редактировать">
-                      <i class="fas fa-edit"></i>
+                      <img src="@/assets/edit.png" alt="edit" width="18" height="18" />
                     </button>
                     <button @click="viewPartnerDocuments(partner)" class="btn-icon btn-docs" title="Документы">
-                      <i class="fas fa-file-alt"></i>
+                      <img src="@/assets/docs.png" alt="docs" width="18" height="18" />
                     </button>
                     <button @click="deletePartner(partner)" class="btn-icon btn-delete" title="Удалить">
-                      <i class="fas fa-trash"></i>
+                      <img src="@/assets/delete.png" alt="delete" width="18" height="18" />
                     </button>
                   </div>
                 </td>
@@ -280,6 +229,7 @@
         </div>
         
         <form @submit.prevent="createPartner" class="modal-body">
+          <AppLoader v-if="creatingPartner" />
           <div class="form-group">
             <label>Имя партнера *</label>
             <input v-model="newPartner.name" type="text" required />
@@ -318,6 +268,88 @@
       </div>
     </div>
     
+    <!-- Upload Files Modal -->
+    <div v-if="showUploadModal" class="modal-overlay" @click.self="showUploadModal = false">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h3>Загрузка файлов для {{ currentUploadPartnerName }}</h3>
+          <button @click="closeUploadModal" class="close-btn">×</button>
+        </div>
+        
+        <div class="modal-body">
+          <div v-if="!uploading" class="upload-area" :class="{ dragover: isDragover }" 
+            @dragover.prevent="isDragover = true"
+            @dragleave.prevent="isDragover = false"
+            @drop.prevent="handleDrop">
+            <input 
+              ref="partnerFileInput"
+              type="file" 
+              multiple 
+              accept=".xlsx,.xls"
+              @change="handleFileSelect"
+              style="display: none"
+            />
+            
+            <div class="upload-content">
+              <div class="upload-icon">
+                <i class="fas fa-cloud-upload-alt"></i>
+              </div>
+              <p>Перетащите Excel файлы сюда или <button @click="$refs.partnerFileInput.click()" class="link-btn">выберите файлы</button></p>
+              <p class="upload-hint">Поддерживаются файлы: .xlsx, .xls (максимум 50 файлов)</p>
+            </div>
+          </div>
+          
+          <!-- Selected files -->
+          <div v-if="selectedFiles.length > 0 && !uploading" class="selected-files">
+            <h4>Выбранные файлы ({{ selectedFiles.length }})</h4>
+            <div class="file-list">
+              <div v-for="(file, index) in selectedFiles" :key="index" class="file-item">
+                <div class="file-info">
+                  <div class="file-name">{{ file.name }}</div>
+                  <div class="file-size">{{ formatFileSize(file.size) }}</div>
+                </div>
+                <button @click="removeFile(index)" class="remove-btn">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Upload results -->
+          <div v-if="uploadResults.length > 0 && !uploading" class="upload-results">
+            <h4>Результаты загрузки</h4>
+            <div class="results-summary">
+              <span class="success"><i class="fas fa-check-circle"></i> Успешно: {{ uploadResults.filter(r => r.success).length }}</span>
+              <span class="error"><i class="fas fa-times-circle"></i> Ошибки: {{ uploadResults.filter(r => !r.success).length }}</span>
+            </div>
+            
+            <div class="results-list">
+              <div v-for="result in uploadResults" :key="result.fileName" class="result-item" :class="{ error: !result.success }">
+                <div class="result-file">{{ result.fileName }}</div>
+                <div class="result-status">
+                  {{ result.success ? 'Успешно загружен' : result.error }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" @click="closeUploadModal" class="btn btn-secondary">
+            Отмена
+          </button>
+          <button v-if="!uploading" @click="uploadFilesForPartner" :disabled="selectedFiles.length === 0" class="btn btn-primary">
+            <i class="fas fa-upload"></i>
+            Загрузить файлы
+          </button>
+          <div v-else style="display:flex;align-items:center;gap:12px;">
+            <AppLoader />
+            <span>Загрузка файлов...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- Edit Partner Modal -->
     <div v-if="showEditPartnerModal" class="modal-overlay" @click.self="showEditPartnerModal = false">
       <div class="modal">
@@ -327,6 +359,7 @@
         </div>
         
         <form @submit.prevent="updatePartner" class="modal-body">
+          <AppLoader v-if="editingPartner" />
           <div class="form-group">
             <label>Имя партнера *</label>
             <input v-model="partnerToEdit.name" type="text" required />
@@ -374,7 +407,8 @@
         </div>
         
         <div class="modal-body">
-          <table v-if="partnerDocuments.length > 0" class="documents-table">
+          <AppLoader v-if="loadingPartnerDocuments" />
+          <table v-else-if="partnerDocuments.length > 0" class="documents-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -382,19 +416,26 @@
                 <th>Файл</th>
                 <th>Размер</th>
                 <th>Статус</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="doc in partnerDocuments" :key="doc.inc">
-                <td>{{ doc.inc }}</td>
-                <td>{{ formatDate(doc.uploadedAt) }}</td>
-                <td>{{ doc.filename }}</td>
-                <td>{{ formatFileSize(doc.size) }}</td>
-                <td>{{ doc.publishedAt ? 'Опубликован' : 'Не опубликован' }}</td>
+              <tr v-for="doc in partnerDocuments" :key="doc.inc || doc.claimId || doc.DocumentId || doc.DocumentId">
+                <td>{{ doc.inc ?? doc.claimId ?? doc.ClaimId ?? doc.DocumentId ?? '—' }}</td>
+                <td>{{ formatDate(getDocDate(doc)) }}</td>
+                <td>{{ doc.filename || doc.FileName || doc.fileName || doc.originalName || '—' }}</td>
+                <td>{{ formatFileSize(doc.size || doc.FileSize || doc.fileSize) }}</td>
+                <td>{{ isPublished(doc) ? 'Опубликован' : 'Не опубликован' }}</td>
+                <td>
+                  <div class="action-buttons">
+                    <button v-if="!isPublished(doc)" @click="publishPartnerDocument(doc)" class="btn btn-sm btn-primary">Опубликовать</button>
+                    <button @click="confirmDeletePartnerDocument(doc)" class="btn btn-sm btn-danger">Удалить</button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
-          <p v-else>Документы не найдены</p>
+          <p v-else-if="!loadingPartnerDocuments">Документы не найдены</p>
         </div>
         
         <div class="modal-footer">
@@ -405,15 +446,48 @@
       </div>
     </div>
     
+    <!-- View Document Modal - Excel-like viewer -->
+    <ExcelViewer
+      :show="showViewDocumentModal"
+      :document="currentDocument"
+      :excelData="excelData"
+      :loading="loadingCurrentDocument"
+      @close="showViewDocumentModal = false"
+      @download="downloadDocument(currentDocument.inc || currentDocument.Inc)"
+    />
+
+    <!-- Confirmation Modal -->
+    <div v-if="showConfirmModal" class="modal-overlay" @click.self="handleConfirmNo">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>{{ confirmTitle }}</h3>
+          <button @click="handleConfirmNo" class="close-btn">×</button>
+        </div>
+
+        <div class="modal-body">
+          <p style="color:#374151; font-size:16px; line-height:1.4">{{ confirmMessage }}</p>
+        </div>
+
+        <div class="modal-footer">
+          <button @click="handleConfirmNo" class="btn btn-outline-blue" :disabled="confirmLoading">{{ confirmCancelText }}</button>
+          <button @click="handleConfirmYes" class="btn btn-primary" :disabled="confirmLoading">
+            <i v-if="confirmLoading" class="fas fa-spinner fa-spin"></i>
+            {{ confirmOkText }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Notifications -->
     <AppNotifications />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import AppLoader from '@/components/AppLoader.vue'
 import AppNotifications from '@/components/AppNotifications.vue'
+import ExcelViewer from '@/components/ExcelViewer.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
 import api from '@/plugins/axios'
@@ -424,13 +498,12 @@ const notificationStore = useNotificationStore()
 // Reactive data
 const user = ref(null)
 const stats = ref({})
-const activeTab = ref('upload')
+const activeTab = ref('partners')
 
 // Tabs
 const tabs = [
-  { id: 'upload', label: 'Загрузка файлов' },
-  { id: 'documents', label: 'Документы' },
-  { id: 'partners', label: 'Партнеры' }
+  { id: 'partners', label: 'Партнеры' },
+  { id: 'documents', label: 'Документы' }
 ]
 
 // File upload
@@ -444,10 +517,25 @@ const unpublishedClaims = ref([])
 const selectedClaims = ref([])
 const loadingDocuments = ref(false)
 const publishing = ref(false)
+// Additional loaders
+const loadingStats = ref(false)
+const loadingPartnerDocuments = ref(false)
+const documentsFilter = ref('unpublished') // 'unpublished' or 'published'
+
+const setDocumentsFilter = (value) => {
+  documentsFilter.value = value
+  refreshDocuments()
+}
+
+// File-Partner mapping
+const currentUploadPartnerId = ref(null)
+const currentUploadPartnerName = ref('')
+const showUploadModal = ref(false)
 
 // Partners
 const partners = ref([])
 const loadingPartners = ref(false)
+const partnerSearchQuery = ref('')
 const showCreatePartnerModal = ref(false)
 const creatingPartner = ref(false)
 const showEditPartnerModal = ref(false)
@@ -455,6 +543,10 @@ const editingPartner = ref(false)
 const partnerToEdit = ref(null)
 const showPartnerDocumentsModal = ref(false)
 const partnerDocuments = ref([])
+const showViewDocumentModal = ref(false)
+const currentDocument = ref(null)
+const loadingCurrentDocument = ref(false)
+const excelData = ref(null)
 const newPartner = ref({
   name: '',
   email: '',
@@ -463,8 +555,49 @@ const newPartner = ref({
   password: ''
 })
 
+// Confirmation modal state
+const showConfirmModal = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmOkText = ref('Да')
+const confirmCancelText = ref('Отмена')
+const confirmLoading = ref(false)
+let confirmCallback = null
+
+const openConfirm = ({ title = 'Подтверждение', message = '', okText = 'Да', cancelText = 'Отмена', onConfirm = null }) => {
+  confirmTitle.value = title
+  confirmMessage.value = message
+  confirmOkText.value = okText
+  confirmCancelText.value = cancelText
+  confirmCallback = onConfirm
+  confirmLoading.value = false
+  showConfirmModal.value = true
+}
+
+const handleConfirmYes = async () => {
+  if (!confirmCallback) {
+    showConfirmModal.value = false
+    return
+  }
+  try {
+    confirmLoading.value = true
+    await confirmCallback()
+  } catch (e) {
+    console.error('Confirm action error', e)
+  } finally {
+    confirmLoading.value = false
+    showConfirmModal.value = false
+  }
+}
+
+const handleConfirmNo = () => {
+  showConfirmModal.value = false
+  confirmCallback = null
+}
+
 // Methods
 const loadData = async () => {
+  loadingStats.value = true
   try {
     const response = await api.get('/admin/stats')
     stats.value = response.data.stats
@@ -475,6 +608,8 @@ const loadData = async () => {
       type: 'error',
       message: 'Ошибка загрузки данных'
     })
+  } finally {
+    loadingStats.value = false
   }
 }
 
@@ -511,20 +646,58 @@ const removeFile = (index) => {
   selectedFiles.value.splice(index, 1)
 }
 
-const clearFiles = () => {
+// clearFiles removed — upload modal uses closeUploadModal to reset state
+
+const filteredPartners = computed(() => {
+  if (!partnerSearchQuery.value) return partners.value
+  
+  const query = partnerSearchQuery.value.toLowerCase()
+  return partners.value.filter(p => {
+    const name = (p.Name || p.name || '').toLowerCase()
+    const email = (p.Email || p.email || '').toLowerCase()
+    const inc = String(p.Inc || p.partnerId || '')
+    const alias = (p.Alias || p.alias || '').toLowerCase()
+    
+    return name.includes(query) || 
+           email.includes(query) || 
+           inc.includes(query) ||
+           alias.includes(query)
+  })
+})
+
+const openUploadForPartner = (partner) => {
+  currentUploadPartnerId.value = partner.Inc
+  currentUploadPartnerName.value = partner.Name
   selectedFiles.value = []
   uploadResults.value = []
+  showUploadModal.value = true
 }
 
-const uploadFiles = async () => {
-  if (selectedFiles.value.length === 0) return
+const closeUploadModal = () => {
+  showUploadModal.value = false
+  selectedFiles.value = []
+  uploadResults.value = []
+  currentUploadPartnerId.value = null
+  currentUploadPartnerName.value = ''
+}
+
+const uploadFilesForPartner = async () => {
+  if (selectedFiles.value.length === 0 || !currentUploadPartnerId.value) return
   
   uploading.value = true
   const formData = new FormData()
   
-  selectedFiles.value.forEach(file => {
+  // Собираем массив partner IDs - все файлы для одного партнера
+  const partnerIds = []
+  
+  // Add files and collect partner IDs
+  selectedFiles.value.forEach((file) => {
     formData.append('files', file)
+    partnerIds.push(currentUploadPartnerId.value)
   })
+  
+  // Отправляем массив партнеров как JSON
+  formData.append('partnerIds', JSON.stringify(partnerIds))
   
   try {
     const response = await api.post('/admin/upload-files', formData, {
@@ -546,6 +719,14 @@ const uploadFiles = async () => {
     selectedFiles.value = []
     refreshDocuments()
     
+    // Redirect to partner documents to publish
+    const uploadedPartner = {
+      Inc: currentUploadPartnerId.value,
+      Name: currentUploadPartnerName.value
+    }
+    closeUploadModal()
+    await viewPartnerDocuments(uploadedPartner)
+    
   } catch (error) {
     console.error('Ошибка загрузки файлов:', error)
     notificationStore.addNotification({
@@ -560,7 +741,8 @@ const uploadFiles = async () => {
 const refreshDocuments = async () => {
   loadingDocuments.value = true
   try {
-    const response = await api.get('/admin/unpublished-claims')
+    const endpoint = documentsFilter.value === 'unpublished' ? '/admin/unpublished-claims' : '/admin/published-claims'
+    const response = await api.get(endpoint)
     unpublishedClaims.value = response.data.data
     selectedClaims.value = []
   } catch (error) {
@@ -626,32 +808,81 @@ const publishSelectedDocuments = async () => {
 }
 
 const publishAllDocuments = async () => {
-  const allClaimIds = unpublishedClaims.value.map(claim => claim.Inc)
+  const allClaimIds = unpublishedClaims.value.map(claim => getClaimId(claim))
   selectedClaims.value = allClaimIds
   await publishSelectedDocuments()
 }
 
-const deleteDocument = async (claimId) => {
-  if (!confirm('Вы уверены, что хотите удалить этот документ?')) return
-  
-  try {
-    await api.delete(`/admin/claims/${claimId}`)
-    
-    notificationStore.addNotification({
-      type: 'success',
-      message: 'Документ успешно удален'
-    })
-    
-    refreshDocuments()
-    loadData()
-    
-  } catch (error) {
-    console.error('Ошибка удаления:', error)
-    notificationStore.addNotification({
-      type: 'error',
-      message: 'Ошибка удаления документа'
-    })
+const unpublishDocument = async (claimId) => {
+  if (!claimId) {
+    notificationStore.addNotification({ type: 'error', message: 'Не удалось определить ID документа' })
+    return
   }
+
+  openConfirm({
+    title: 'Снятие публикации',
+    message: 'Вы уверены, что хотите снять публикацию этого документа? Партнёр больше не сможет его видеть.',
+    okText: 'Снять публикацию',
+    cancelText: 'Отмена',
+    onConfirm: async () => {
+      try {
+        await api.post('/admin/unpublish-claims', {
+          claimIds: [claimId]
+        })
+
+        notificationStore.addNotification({
+          type: 'success',
+          message: 'Публикация документа снята'
+        })
+
+        refreshDocuments()
+        loadData()
+
+      } catch (error) {
+        console.error('Ошибка снятия публикации:', error)
+        notificationStore.addNotification({
+          type: 'error',
+          message: 'Ошибка снятия публикации: ' + (error.response?.data?.message || error.message)
+        })
+        throw error
+      }
+    }
+  })
+}
+
+const deleteDocument = async (claimId) => {
+  if (!claimId) {
+    notificationStore.addNotification({ type: 'error', message: 'Не удалось определить ID документа' })
+    return
+  }
+
+  openConfirm({
+    title: 'Удаление документа',
+    message: 'Вы уверены, что хотите удалить этот документ?',
+    okText: 'Удалить',
+    cancelText: 'Отмена',
+    onConfirm: async () => {
+      try {
+        await api.delete(`/admin/claims/${claimId}`)
+
+        notificationStore.addNotification({
+          type: 'success',
+          message: 'Документ успешно удален'
+        })
+
+        refreshDocuments()
+        loadData()
+
+      } catch (error) {
+        console.error('Ошибка удаления:', error)
+        notificationStore.addNotification({
+          type: 'error',
+          message: 'Ошибка удаления документа: ' + (error.response?.data?.message || error.message)
+        })
+        throw error
+      }
+    }
+  })
 }
 
 // Partner management methods
@@ -704,30 +935,38 @@ const updatePartner = async () => {
 }
 
 const deletePartner = async (partner) => {
-  if (!confirm(`Вы уверены, что хотите удалить партнера "${partner.Name}"? Это действие нельзя отменить.`)) return
-  
-  try {
-    await api.delete(`/admin/partners/${partner.Inc}`)
-    
-    notificationStore.addNotification({
-      type: 'success',
-      message: 'Партнер успешно удален'
-    })
-    
-    loadPartners()
-    loadData()
-    
-  } catch (error) {
-    console.error('Ошибка удаления партнера:', error)
-    notificationStore.addNotification({
-      type: 'error',
-      message: 'Ошибка удаления партнера: ' + (error.response?.data?.message || error.message)
-    })
-  }
+  openConfirm({
+    title: 'Удаление партнера',
+    message: `Вы уверены, что хотите удалить партнера "${partner.Name}"? Это действие нельзя отменить.`,
+    okText: 'Удалить',
+    cancelText: 'Отмена',
+    onConfirm: async () => {
+      try {
+        await api.delete(`/admin/partners/${partner.Inc}`)
+
+        notificationStore.addNotification({
+          type: 'success',
+          message: 'Партнер успешно удален'
+        })
+
+        loadPartners()
+        loadData()
+
+      } catch (error) {
+        console.error('Ошибка удаления партнера:', error)
+        notificationStore.addNotification({
+          type: 'error',
+          message: 'Ошибка удаления партнера: ' + (error.response?.data?.message || error.message)
+        })
+        throw error
+      }
+    }
+  })
 }
 
 const viewPartnerDocuments = async (partner) => {
   partnerToEdit.value = partner
+  loadingPartnerDocuments.value = true
   try {
     const response = await api.get(`/admin/partners/${partner.Inc}/documents`)
     partnerDocuments.value = response.data.documents
@@ -738,6 +977,75 @@ const viewPartnerDocuments = async (partner) => {
       type: 'error',
       message: 'Ошибка загрузки документов партнера'
     })
+  } finally {
+    loadingPartnerDocuments.value = false
+  }
+}
+
+const getDocDate = (doc) => {
+  // try multiple possible fields, prioritize created from Partner sheet
+  return doc.created ?? doc.Created ?? doc.uploadedAt ?? doc.uploaded_at ?? doc.uploadedAtRaw ?? doc.publishedAt ?? doc.PublishedAt ?? doc.dateBeg ?? doc.DateBeg ?? doc.CreatedAt ?? null
+}
+
+const isPublished = (doc) => {
+  if (!doc) return false
+  if (doc.publishedAt || doc.PublishedAt) return true
+  if (typeof doc.Published !== 'undefined') return Boolean(doc.Published)
+  if (typeof doc.published !== 'undefined') return Boolean(doc.published)
+  if (doc.Status) {
+    try {
+      return String(doc.Status).toLowerCase().includes('pub')
+    } catch (e) {
+      // ignore
+    }
+  }
+  return false
+}
+
+const publishPartnerDocument = async (doc) => {
+  const id = getClaimId(doc) || doc.claimId || doc.ClaimId || doc.DocumentId || doc.inc
+  if (!id) return
+  try {
+    await api.post('/admin/publish-claims', { claimIds: [id] })
+    notificationStore.addNotification({ type: 'success', message: 'Документ опубликован' })
+    // reload list
+    await viewPartnerDocuments(partnerToEdit.value)
+    loadData()
+  } catch (error) {
+    console.error('Ошибка публикации документа партнера:', error)
+    notificationStore.addNotification({ type: 'error', message: 'Ошибка публикации документа' })
+  }
+}
+
+const confirmDeletePartnerDocument = (doc) => {
+  const published = isPublished(doc)
+  openConfirm({
+    title: published ? 'Удалить опубликованный документ' : 'Удалить документ',
+    message: published
+      ? 'Документ опубликован. Удаление приведет к удалению опубликованной версии. Вы уверены?'
+      : 'Вы уверены, что хотите удалить документ?',
+    okText: 'Удалить',
+    cancelText: 'Отмена',
+    onConfirm: async () => {
+      await deletePartnerDocument(doc)
+    }
+  })
+}
+
+const deletePartnerDocument = async (doc) => {
+  const id = getClaimId(doc) || doc.claimId || doc.ClaimId || doc.DocumentId || doc.inc
+  if (!id) return
+  try {
+    // If document is published, pass force=true to allow deletion
+    const force = isPublished(doc)
+    const url = `/admin/claims/${id}` + (force ? '?force=true' : '')
+    await api.delete(url)
+    notificationStore.addNotification({ type: 'success', message: 'Документ удалён' })
+    await viewPartnerDocuments(partnerToEdit.value)
+    loadData()
+  } catch (error) {
+    console.error('Ошибка удаления документа партнера:', error)
+    notificationStore.addNotification({ type: 'error', message: 'Ошибка удаления документа' })
   }
 }
 
@@ -745,7 +1053,82 @@ const toggleSelectAll = () => {
   if (selectedClaims.value.length === unpublishedClaims.value.length) {
     selectedClaims.value = []
   } else {
-    selectedClaims.value = unpublishedClaims.value.map(claim => claim.Inc)
+    selectedClaims.value = unpublishedClaims.value.map(claim => getClaimId(claim))
+  }
+}
+
+const viewDocument = async (claimId) => {
+  try {
+    loadingCurrentDocument.value = true
+    showViewDocumentModal.value = true
+    
+    const response = await api.get(`/admin/claims/${claimId}`)
+    currentDocument.value = response.data.data
+    excelData.value = response.data.excelData
+  } catch (error) {
+    console.error('Ошибка загрузки документа:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки документа'
+    })
+    showViewDocumentModal.value = false
+  } finally {
+    loadingCurrentDocument.value = false
+  }
+}
+
+const downloadDocument = async (claimId) => {
+  try {
+    const response = await api.get(`/admin/claims/${claimId}/download`, {
+      responseType: 'blob'
+    })
+    
+    // Получаем имя файла из заголовка или используем имя из currentDocument
+    const contentDisposition = response.headers['content-disposition'] || response.headers['Content-Disposition']
+    let filename = getDisplayFileName(currentDocument.value) || 'document.xlsx'
+    if (contentDisposition) {
+      // Try RFC 5987 filename* first
+      const filenameStarMatch = contentDisposition.match(/filename\*=(?:[\w'']*)?([^;\n]+)/i)
+      if (filenameStarMatch && filenameStarMatch[1]) {
+        try {
+          // filename*=UTF-8''%D0%9F%D1%80%D0%B8%D0%BC%D0%B5%D1%80.xlsx
+          const v = filenameStarMatch[1].trim().replace(/^UTF-8''/i, '')
+          filename = decodeURIComponent(v.replace(/"/g, ''))
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=(['"]?)([^'"\n]*?)\1/)
+        if (filenameMatch && filenameMatch[2]) {
+          filename = filenameMatch[2]
+        }
+      }
+    }
+    // If filename still not usable, build fallback (ensures extension)
+    if (!filename || filename === '—') {
+      filename = buildFallbackFilename(currentDocument.value)
+    }
+    
+    // Создаем ссылку для скачивания
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Файл успешно скачан'
+    })
+  } catch (error) {
+    console.error('Ошибка скачивания:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка скачивания файла'
+    })
   }
 }
 
@@ -796,20 +1179,49 @@ const createPartner = async () => {
 // Utility functions
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes'
+  if (bytes == null || isNaN(Number(bytes))) return '—'
+  const b = Number(bytes)
   const k = 1024
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  const i = Math.floor(Math.log(b) / Math.log(k))
+  const idx = Math.min(Math.max(i, 0), sizes.length - 1)
+  return parseFloat((b / Math.pow(k, idx)).toFixed(2)) + ' ' + sizes[idx]
+}
+
+const toTimestampMs = (value) => {
+  if (value == null || value === '') return null
+  // If numeric (seconds or milliseconds)
+  if (typeof value === 'number') {
+    // If looks like seconds (<= 10^11), convert to ms
+    return value < 1e12 ? value * 1000 : value
+  }
+  // If string of digits
+  if (/^\d+$/.test(String(value))) {
+    const n = parseInt(value, 10)
+    return n < 1e12 ? n * 1000 : n
+  }
+  // If string looks like 'YYYY-MM-DD HH:mm:ss' or 'YYYY/MM/DD HH:mm:ss', treat as UTC
+  if (typeof value === 'string' && /^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value)) {
+    // normalize to ISO and append Z to force UTC
+    const iso = value.replace(' ', 'T').replace(/\//g, '-') + 'Z'
+    const parsedIso = Date.parse(iso)
+    return isNaN(parsedIso) ? null : parsedIso
+  }
+  // Otherwise let Date parse the string (ISO, etc.)
+  const parsed = Date.parse(value)
+  return isNaN(parsed) ? null : parsed
 }
 
 const formatDate = (date) => {
-  if (!date) return ''
-  return new Date(date).toLocaleDateString('ru-RU')
+  const ts = toTimestampMs(date)
+  if (!ts) return ''
+  return new Date(ts).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })
 }
 
 const formatDateTime = (date) => {
-  if (!date) return ''
-  return new Date(date).toLocaleString('ru-RU', { 
+  const ts = toTimestampMs(date)
+  if (!ts) return ''
+  return new Date(ts).toLocaleString('ru-RU', { 
     timeZone: 'Europe/Moscow',
     year: 'numeric',
     month: '2-digit',
@@ -820,9 +1232,66 @@ const formatDateTime = (date) => {
 }
 
 const formatPeriod = (dateFrom, dateTo) => {
+  if (!dateFrom || !dateTo) return '—'
   const from = new Date(dateFrom).toLocaleDateString('ru-RU')
   const to = new Date(dateTo).toLocaleDateString('ru-RU')
   return `${from} — ${to}`
+}
+
+// Format currency helper (kept for reuse if needed elsewhere)
+const formatCurrency = (amount) => {
+  if (amount === null || amount === undefined) return '—'
+  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+}
+
+// Helper to get claim id regardless of backend field naming
+const getClaimId = (claim) => {
+  if (!claim) return null
+  return claim.Inc ?? claim.inc ?? claim.id ?? claim.ClaimId ?? null
+}
+
+// Friendly filename getter with fallbacks
+const getDisplayFileName = (doc) => {
+  if (!doc) return '—'
+  const name = doc.fileName || doc.FileName || doc.originalName || doc.originalname || doc.filename || doc.FileNameDownload
+  if (name && String(name).trim() !== '') return name
+  return buildFallbackFilename(doc)
+}
+
+// Build a readable, filesystem-safe fallback filename when original name is missing
+const buildFallbackFilename = (doc) => {
+  if (!doc) return 'document.xlsx'
+  const parts = []
+  const type = doc.type || doc.Type || ''
+  const partner = doc.PartnerName || doc.partnerName || doc.Name || doc.name || ''
+  const inc = doc.inc ?? doc.Inc ?? doc.id ?? ''
+
+  if (type) parts.push(String(type))
+  if (partner) parts.push(String(partner))
+  if (inc) parts.push(`#${inc}`)
+
+  // Period: try dateBeg/dateEnd
+  const from = doc.dateBeg ?? doc.DateBeg ?? doc.dateBegRaw ?? null
+  const to = doc.dateEnd ?? doc.DateEnd ?? doc.dateEndRaw ?? null
+  if (from && to) {
+    const f = toTimestampMs(from)
+    const t = toTimestampMs(to)
+    if (f && t) {
+      const d1 = new Date(f)
+      const d2 = new Date(t)
+      const pf = `${d1.getFullYear()}${String(d1.getMonth()+1).padStart(2,'0')}`
+      const pt = `${d2.getFullYear()}${String(d2.getMonth()+1).padStart(2,'0')}`
+      parts.push(`${pf}-${pt}`)
+    }
+  }
+
+  let filename = parts.join(' - ')
+  if (!filename) filename = `document${inc ? `-${inc}` : ''}`
+  // sanitize: remove slashes and quotes
+  filename = filename.replace(/[\\/:*?"<>|]/g, '').trim()
+  // append default extension
+  if (!/\.[a-z0-9]+$/i.test(filename)) filename += '.xlsx'
+  return filename
 }
 
 const getStatusLabel = (status) => {
@@ -846,13 +1315,23 @@ const handleTabChange = () => {
 // Lifecycle
 onMounted(() => {
   loadData()
-  refreshDocuments()
+  handleTabChange()
+  // ensure helper is treated as used by linters
+  void formatCurrency(0)
 })
 
 // Watch activeTab
-import { watch } from 'vue'
 watch(activeTab, handleTabChange)
 </script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, #app {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 400;
+}
+</style>
 
 <style scoped>
 .admin-dashboard {
@@ -1082,7 +1561,7 @@ watch(activeTab, handleTabChange)
 }
 
 .remove-btn {
-  background: #ef4444;
+  background: #b91c1c;
   color: white;
   border: none;
   border-radius: 50%;
@@ -1098,7 +1577,7 @@ watch(activeTab, handleTabChange)
 }
 
 .remove-btn:hover {
-  background: #dc2626;
+  background: #991b1b;
 }
 
 .upload-actions {
@@ -1119,12 +1598,12 @@ watch(activeTab, handleTabChange)
 }
 
 .results-summary .success {
-  color: #28a745;
+  color: #16a34a;
   font-weight: 500;
 }
 
 .results-summary .error {
-  color: #dc3545;
+  color: #b91c1c;
   font-weight: 500;
 }
 
@@ -1147,7 +1626,7 @@ watch(activeTab, handleTabChange)
 
 .result-item.error {
   background: #fff5f5;
-  color: #dc3545;
+  color: #b91c1c;
 }
 
 .section-header {
@@ -1317,12 +1796,12 @@ watch(activeTab, handleTabChange)
 }
 
 .password-status.set {
-  color: #10b981;
+  color: #16a34a;
   font-weight: 600;
 }
 
 .password-status.not-set {
-  color: #ef4444;
+  color: #b91c1c;
   font-weight: 600;
 }
 
@@ -1471,25 +1950,25 @@ watch(activeTab, handleTabChange)
 }
 
 .btn-success {
-  background: #10b981;
+  background: #16a34a;
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-success:hover {
-  background: #059669;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  background: #15803d;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
 }
 
 .btn-danger {
-  background: #ef4444;
+  background: #b91c1c;
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-danger:hover {
-  background: #dc2626;
-  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+  background: #991b1b;
+  box-shadow: 0 2px 6px rgba(185, 28, 28, 0.3);
 }
 
 .btn-info {
@@ -1499,8 +1978,21 @@ watch(activeTab, handleTabChange)
 }
 
 .btn-info:hover {
-  background: #0891b2;
   box-shadow: 0 2px 6px rgba(6, 182, 212, 0.3);
+}
+
+/* Outlined blue button (transparent background, blue border/text) */
+.btn-outline-blue {
+  background: transparent;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-outline-blue:hover {
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .btn:disabled {
@@ -1519,15 +2011,12 @@ watch(activeTab, handleTabChange)
   text-align: center;
   padding: 80px 40px;
   color: #64748b;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .empty-icon {
   font-size: 5rem;
   margin-bottom: 24px;
-  opacity: 0.6;
+  opacity: 0.7;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
 }
 
@@ -1580,6 +2069,30 @@ watch(activeTab, handleTabChange)
 /* Modern animations and effects */
 .tab-content {
   animation: fadeInUp 0.4s ease-out;
+}
+
+.doc-filter {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.doc-filter .btn-small {
+  white-space: nowrap;
+  font-size: 13px;
+  padding: 8px 14px;
+}
+
+.doc-filter .btn-small.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #1e40af;
+  box-shadow: 0 2px 6px rgba(37,99,235,0.12);
+}
+
+.doc-filter .btn-small:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
 }
 
 @keyframes fadeInUp {
@@ -1674,10 +2187,6 @@ watch(activeTab, handleTabChange)
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.btn-small:hover {
-  background: #0891b2;
-}
-
 .btn-info {
   background: #06b6d4;
   color: white;
@@ -1685,19 +2194,18 @@ watch(activeTab, handleTabChange)
 }
 
 .btn-info:hover {
-  background: #0891b2;
   box-shadow: 0 2px 6px rgba(6, 182, 212, 0.3);
 }
 
 .btn-danger {
-  background: #dc3545;
+  background: #b91c1c;
   color: white;
-  border: 1px solid #dc3545;
+  border: 1px solid #b91c1c;
 }
 
 .btn-danger:hover {
-  background: #c82333;
-  border-color: #bd2130;
+  background: #991b1b;
+  border-color: #7f1d1d;
 }
 
 .modal-large {
@@ -1713,53 +2221,91 @@ watch(activeTab, handleTabChange)
 
 @media (max-width: 768px) {
   .dashboard-container {
-    padding: 16px;
+    padding: 12px;
   }
   
   .stats-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  
-  .stat-card {
-    padding: 12px;
     gap: 8px;
+    margin-bottom: 18px;
   }
-  
+
+  .stat-card {
+    padding: 8px;
+    gap: 6px;
+  }
+
   .stat-icon {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
   }
-  
+
   .stat-value {
-    font-size: 1.3rem;
+    font-size: 1.1rem;
+    line-height: 1.1;
   }
-  
+
   .stat-label {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
+    opacity: 0.9;
   }
   
+  .stat-card::before {
+    height: 2px;
+    left: 12px;
+    right: 12px;
+  }
+  
+  /* Keep primary tabs on a single row on small screens */
   .tabs {
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  
+
   .tab {
-    text-align: left;
-    padding: 14px 20px;
+    text-align: center;
+    padding: 10px 14px;
+    flex: none;
+    white-space: nowrap;
+    font-size: 14px;
   }
   
   .section-header {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
   }
-  
+
+  /* Keep header action buttons compact (don't stretch full width) */
   .actions {
     flex-direction: column;
+    gap: 8px;
   }
-  
+
   .actions .btn {
-    width: 100%;
+    width: auto;
+    display: inline-flex;
     justify-content: center;
   }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .header-actions .search-input-header {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .header-actions .btn {
+    width: auto;
+    padding: 8px 10px;
+  }
+  
   
   .upload-area {
     padding: 40px 20px;
@@ -1791,14 +2337,40 @@ watch(activeTab, handleTabChange)
   }
   
   .modal {
-    width: calc(100vw - 32px);
+    width: calc(100vw - 24px);
+    max-width: 100%;
+    margin: 12px;
+  }
+  
+  .modal-large {
+    width: calc(100vw - 24px);
     max-width: 100%;
   }
   
-  .modal-header,
-  .modal-body,
+  .modal-header {
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .modal-header h3 {
+    font-size: 16px;
+  }
+  
+  .modal-body {
+    padding: 16px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  
   .modal-footer {
     padding: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .modal-footer .btn {
+    flex: 1;
+    min-width: 120px;
   }
   
   .stat-card {
@@ -1821,12 +2393,13 @@ watch(activeTab, handleTabChange)
   height: 32px;
   border-radius: 6px;
   border: none;
+  background: transparent;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease;
   margin-right: 4px;
 }
 
@@ -1834,31 +2407,535 @@ watch(activeTab, handleTabChange)
   margin-right: 0;
 }
 
-.btn-edit {
-  background: #64748b;
-  color: white;
+/* Make action buttons transparent; icons outlined black */
+.btn-edit,
+.btn-docs,
+.btn-delete,
+.btn-upload {
+  background: transparent;
+  color: inherit;
+  border: 1px solid #e5e7eb;
+  padding: 6px;
+  border-radius: 6px;
 }
 
-.btn-edit:hover {
-  background: #475569;
+.btn-edit:hover,
+.btn-docs:hover,
+.btn-delete:hover,
+.btn-upload:hover {
+  background: rgba(0,0,0,0.04);
 }
 
-.btn-docs {
-  background: #06b6d4;
-  color: white;
+.btn-icon img {
+  display: inline-block;
+  vertical-align: middle;
 }
 
-.btn-docs:hover {
-  background: #0891b2;
-}
+  /* Responsive partner table -> card layout (only for small screens) */
+  @media (max-width: 768px) {
+    /* Tables to cards */
+    .partners-table thead,
+    .documents-table thead {
+      display: none;
+    }
+
+    .partners-table,
+    .documents-table {
+      display: block;
+    }
+
+    .partners-table tbody,
+    .documents-table tbody {
+      display: block;
+    }
+
+    .partners-table tbody tr,
+    .documents-table tbody tr {
+      display: block;
+      background: white;
+      margin-bottom: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .partners-table td,
+    .documents-table td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border: none;
+      text-align: right;
+    }
+
+    .partners-table td::before,
+    .documents-table td::before {
+      content: attr(data-label);
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      margin-right: 12px;
+      text-align: left;
+      flex: 1;
+    }
+    
+    .documents-table td:first-child::before {
+      content: '';
+    }
+
+    .partners-table td:last-child,
+    .documents-table td:last-child {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    
+    .documents-table td:last-child::before {
+      display: none;
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-direction: row;
+      gap: 6px;
+      width: 100%;
+      justify-content: flex-end;
+    }
+    
+    .action-buttons .btn {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      padding: 8px 10px;
+    }
+
+    .search-input-header {
+      min-width: 0;
+      width: 100%;
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+
+    .btn-icon {
+      width: 38px;
+      height: 38px;
+      padding: 8px;
+    }
+    
+    .btn-icon img {
+      width: 16px !important;
+      height: 16px !important;
+    }
+    
+    /* Document details responsive */
+    .detail-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    
+    .detail-section {
+      padding: 14px;
+    }
+    
+    .detail-header h4 {
+      font-size: 14px;
+    }
+    
+    /* Forms responsive */
+    .form-group input,
+    .form-group select {
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+    
+    /* Upload area */
+    .upload-area {
+      padding: 30px 20px;
+    }
+    
+    .upload-content p {
+      font-size: 14px;
+    }
+    
+    /* File list */
+    .file-item {
+      padding: 10px 12px;
+    }
+    
+    .file-name {
+      font-size: 13px;
+    }
+    
+    .file-size {
+      font-size: 11px;
+    }
+    
+    /* Bulk actions */
+    .bulk-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+    
+    .bulk-actions .btn {
+      width: 100%;
+    }
+    
+    /* Doc filter buttons */
+    .doc-filter {
+      width: 100%;
+      justify-content: stretch;
+    }
+    
+    .doc-filter .btn-small {
+      flex: 1;
+      text-align: center;
+    }
+    
+    /* Header actions */
+    .header-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+    
+    .header-actions .btn {
+      width: 100%;
+    }
+    
+    /* Section header */
+    .section-header {
+      padding: 14px 16px;
+    }
+    
+    .section-header h3 {
+      font-size: 16px;
+    }
+    
+    .actions {
+      width: 100%;
+      flex-direction: column;
+    }
+    
+    .actions .btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
 
 .btn-delete {
-  background: #ef4444;
   color: white;
 }
 
-.btn-delete:hover {
-  background: #dc2626;
+.btn-upload {
+  color: white;
+}
+
+/* Search input in header */
+.search-input-header {
+  padding: 0.5rem 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  min-width: 300px;
+  transition: all 0.2s;
+}
+
+.search-input-header:focus {
+  outline: none;
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+.header-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+/* Partner Selection Modal Styles */
+.modal-large {
+  max-width: 800px;
+}
+
+.partner-search {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.partner-search input {
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  font-size: 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.partner-search input:focus {
+  outline: none;
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+.partner-search i {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+}
+
+.file-partner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-partner-item {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-name i {
+  color: #06b6d4;
+}
+
+.partner-selector {
+  position: relative;
+}
+
+.partner-select-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.partner-select-btn:hover {
+  border-color: #06b6d4;
+}
+
+.partner-select-btn.selected {
+  border-color: #06b6d4;
+  background: #f0fdfa;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.25rem;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Full-width partner list */
+.partner-list-full {
+  width: 100%;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.partner-list-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+}
+
+.partner-list-item:hover {
+  background: #f0fdfa;
+}
+
+.file-chip {
+  padding: 0.5rem 0.75rem;
+  border-radius: 20px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  margin-right: 0.5rem;
+  cursor: pointer;
+}
+
+.file-chip.active {
+  background: #eefaf9;
+  border-color: #06b6d4;
+}
+
+.chips-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.chip-badge {
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: #16a34a;
+}
+
+.dropdown-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background: #f0fdfa;
+}
+
+.partner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.partner-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.partner-email {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.selected-partner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 2rem;
+  color: #6b7280;
+}
+
+/* Ensure specific icons can be inverted to white */
+.icon-img-invert {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* Document Details View Modal */
+.document-details {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-section {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+}
+
+.detail-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.detail-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.detail-value.amount {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.published {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.unpublished {
+  background: #fef3c7;
+  color: #78350f;
 }
 
 </style>

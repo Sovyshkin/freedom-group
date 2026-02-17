@@ -8,25 +8,34 @@ class EmailService {
   }
 
   setupTransporter() {
+    const frontendUrl = process.env.FRONTEND_URL || '';
+    
+    // Отключаем SMTP на localhost
+    if (frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1')) {
+      console.log('ℹ️  SMTP отключен (localhost окружение)');
+      return;
+    }
+    
     try {
-      // Проверяем наличие настроек SMTP
-      if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-        console.log('ℹ️  SMTP не настроен - email уведомления отключены');
-        return;
-      }
-
-      this.transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASSWORD,
-        },
+      // SMTP relay configuration - no auth needed
+      const smtpConfig = {
+        host: process.env.SMTP_HOST || 'smtp-relay.gmail.com',
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: false, // STARTTLS
         tls: {
           rejectUnauthorized: false
         }
-      });
+      };
+
+      // Add auth only if credentials are provided
+      if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+        smtpConfig.auth = {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASSWORD,
+        };
+      }
+
+      this.transporter = nodemailer.createTransport(smtpConfig);
 
       // Проверяем подключение
       this.transporter.verify((error, success) => {
@@ -48,8 +57,9 @@ class EmailService {
       return { success: false, message: 'Email сервис не настроен' };
     }
 
+    const fromEmail = process.env.SMTP_FROM || 'accounting@freedomgroup.online';
     const mailOptions = {
-      from: `"FREEDOM GROUP" <${process.env.SMTP_USER}>`,
+      from: `"FREEDOM GROUP" <${fromEmail}>`,
       to: to,
       subject: subject,
       html: htmlContent,
@@ -70,7 +80,231 @@ class EmailService {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  // Отправка уведомления о новых документах
+  // Отправка уведомления о публикации документов
+  async sendDocumentsPublishedNotification(email, partnerName, documents) {
+    const subject = '📄 Новые документы опубликованы';
+    
+    // Build documents list HTML
+    const documentsList = documents.map(doc => `
+      <tr>
+        <td style="padding: 12px; border-bottom: 1px solid #e0e0e0;">${doc.fileName || 'Документ'}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #e0e0e0;">${doc.period || '—'}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #e0e0e0;">${doc.date || '—'}</td>
+      </tr>
+    `).join('');
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                line-height: 1.6; 
+                color: #1f2937;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 40px 20px;
+              }
+              .email-wrapper { max-width: 600px; margin: 0 auto; }
+              .email-container { 
+                background: white; 
+                border-radius: 16px; 
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+              }
+              .header { 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white; 
+                padding: 40px 30px; 
+                text-align: center;
+              }
+              .header h1 { 
+                font-size: 28px; 
+                font-weight: 700; 
+                margin-bottom: 8px;
+                letter-spacing: -0.5px;
+              }
+              .header p { 
+                font-size: 16px; 
+                opacity: 0.95;
+              }
+              .content { 
+                padding: 40px 30px;
+                background: white;
+              }
+              .greeting { 
+                font-size: 20px; 
+                font-weight: 600; 
+                color: #1f2937;
+                margin-bottom: 20px;
+              }
+              .message { 
+                font-size: 16px; 
+                color: #4b5563;
+                margin-bottom: 24px;
+                line-height: 1.7;
+              }
+              .documents-section {
+                background: #f9fafb;
+                border-radius: 12px;
+                padding: 24px;
+                margin: 30px 0;
+              }
+              .documents-section h3 {
+                font-size: 18px;
+                color: #1f2937;
+                margin-bottom: 16px;
+                font-weight: 600;
+              }
+              .documents-table {
+                width: 100%;
+                border-collapse: collapse;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+              }
+              .documents-table th {
+                background: #6366f1;
+                color: white;
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 14px;
+              }
+              .button-wrapper { 
+                text-align: center; 
+                margin: 32px 0;
+              }
+              .button { 
+                display: inline-block; 
+                padding: 16px 32px; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white; 
+                text-decoration: none; 
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 16px;
+                box-shadow: 0 4px 14px rgba(102, 126, 234, 0.4);
+                transition: transform 0.2s;
+              }
+              .info-box {
+                background: #eff6ff;
+                border-left: 4px solid #3b82f6;
+                padding: 16px 20px;
+                border-radius: 8px;
+                margin: 24px 0;
+              }
+              .info-box-title {
+                font-weight: 600;
+                color: #1e40af;
+                margin-bottom: 8px;
+                font-size: 15px;
+              }
+              .info-box ul {
+                margin-left: 20px;
+                color: #1e40af;
+              }
+              .info-box li {
+                margin: 6px 0;
+                font-size: 14px;
+              }
+              .footer { 
+                background: #f9fafb;
+                padding: 30px; 
+                text-align: center;
+              }
+              .footer-text {
+                font-size: 13px;
+                color: #6b7280;
+                margin: 8px 0;
+              }
+              .footer-logo {
+                font-size: 18px;
+                font-weight: 700;
+                color: #6366f1;
+                margin-bottom: 12px;
+              }
+              @media only screen and (max-width: 600px) {
+                .content { padding: 30px 20px; }
+                .header { padding: 30px 20px; }
+                .header h1 { font-size: 24px; }
+                .button { padding: 14px 28px; font-size: 15px; }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="email-wrapper">
+              <div class="email-container">
+                  <div class="header">
+                      <h1>📄 FREEDOM GROUP</h1>
+                      <p>Партнёрская система</p>
+                  </div>
+                  
+                  <div class="content">
+                      <div class="greeting">Здравствуйте, ${partnerName}!</div>
+                      
+                      <p class="message">
+                          Уведомляем вас о том, что новые документы были опубликованы и доступны для просмотра и скачивания в вашем личном кабинете.
+                      </p>
+                      
+                      <div class="documents-section">
+                          <h3>📋 Опубликованные документы (${documents.length}):</h3>
+                          <table class="documents-table">
+                              <thead>
+                                  <tr>
+                                      <th>Файл</th>
+                                      <th>Период</th>
+                                      <th>Дата</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  ${documentsList}
+                              </tbody>
+                          </table>
+                      </div>
+                      
+                      <div class="button-wrapper">
+                          <a href="${process.env.FRONTEND_URL || 'https://freedomgroup.online'}" class="button">
+                              🔐 Перейти в личный кабинет
+                          </a>
+                      </div>
+                      
+                      <div class="info-box">
+                          <div class="info-box-title">ℹ️ Важная информация:</div>
+                          <ul>
+                              <li>Документы содержат актуальные данные о ваших начислениях</li>
+                              <li>Рекомендуем сохранить документы на вашем устройстве</li>
+                              <li>В случае обнаружения несоответствий свяжитесь с нами</li>
+                              <li>Документы доступны в разделе «Мои документы»</li>
+                          </ul>
+                      </div>
+                      
+                      <p class="message" style="margin-top: 24px;">
+                          Благодарим за сотрудничество! 🤝
+                      </p>
+                  </div>
+                  
+                  <div class="footer">
+                      <div class="footer-logo">FREEDOM GROUP</div>
+                      <p class="footer-text">© 2026 Freedom Group. Все права защищены.</p>
+                      <p class="footer-text">Это автоматическое сообщение, пожалуйста, не отвечайте на него.</p>
+                      <p class="footer-text" style="margin-top: 16px; color: #9ca3af;">
+                          По всем вопросам: accounting@freedomgroup.online
+                      </p>
+                  </div>
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
+
+    return await this.sendEmail(email, subject, htmlContent);
+  }
+
+  // Отправка уведомления о новых документах (старый метод для совместимости)
   async sendDocumentNotification(email, partnerName, period) {
     const subject = 'Новые документы готовы к скачиванию';
     

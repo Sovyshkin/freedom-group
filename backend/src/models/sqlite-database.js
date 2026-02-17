@@ -86,11 +86,15 @@ class Database {
         CREATE TABLE IF NOT EXISTS claim (
           inc INTEGER PRIMARY KEY AUTOINCREMENT,
           partnerId INTEGER,
+          type TEXT,
+          fullName TEXT,
+          created DATETIME,
           dateBeg DATE,
           dateEnd DATE,
           amount DECIMAL(10,2),
           payAmount DECIMAL(10,2),
           taxAmount DECIMAL(10,2),
+          currency TEXT DEFAULT 'RUB',
           publishedAt DATETIME,
             fileName TEXT,
             originalName TEXT,
@@ -277,6 +281,7 @@ class Database {
       SELECT 
         c.inc as ClaimId,
         c.publishedAt as PublishedAt,
+        c.created as Created,
         c.dateBeg as DateBeg,
         c.dateEnd as DateEnd,
         c.amount as Amount,
@@ -295,14 +300,15 @@ class Database {
     return rows.map(row => ({
       ...row,
       DateBeg: new Date(row.DateBeg).toISOString().split('T')[0],
-      DateEnd: new Date(row.DateEnd).toISOString().split('T')[0]
+      DateEnd: new Date(row.DateEnd).toISOString().split('T')[0],
+      Created: row.Created ? (new Date(row.Created)).toISOString() : null
     }));
   }
 
   async getPartnerDocuments(partnerId, filters = {}) {
     let sql = `
       SELECT c.inc as claimId, c.dateBeg, c.dateEnd, c.amount, c.payAmount, 
-             c.taxAmount, c.publishedAt, d.filename, d.size, d.mimetype
+             c.taxAmount, c.publishedAt, c.created, d.filename, d.size, d.mimetype
       FROM claim c
       LEFT JOIN document d ON c.inc = d.claimId
       WHERE c.partnerId = ?
@@ -367,18 +373,24 @@ class Database {
   // Метод для получения неопубликованных документов
   async getUnpublishedClaims() {
     return this.all(`
-      SELECT inc, fileName, originalName, uploadedAt, partnerId, fileSize
-      FROM claim 
-      WHERE publishedAt IS NULL
-      ORDER BY uploadedAt DESC
+      SELECT c.inc,
+             COALESCE(c.fileName, d.filename) as fileName,
+             c.originalName, c.uploadedAt, c.partnerId, c.fileSize,
+             c.dateBeg, c.dateEnd, p.name as PartnerName, c.created as Created
+      FROM claim c
+      LEFT JOIN partner p ON c.partnerId = p.partnerId
+      LEFT JOIN document d ON d.claimId = c.inc
+      WHERE c.publishedAt IS NULL
+      GROUP BY c.inc
+      ORDER BY c.uploadedAt DESC
     `);
   }
 
-  async createClaim({ partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount }) {
+  async createClaim({ partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount, type, fullName, created, currency }) {
     const result = await this.run(`
-      INSERT INTO claim (partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount]);
+      INSERT INTO claim (partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount, type, fullName, created, currency)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [partnerId, dateBeg, dateEnd, amount, payAmount, taxAmount, type || '', fullName || '', created || new Date(), currency || 'RUB']);
     return result.id;
   }
 
@@ -398,11 +410,11 @@ class Database {
     const partnersCount = await this.get('SELECT COUNT(*) as count FROM partner');
     stats.totalPartners = partnersCount?.count || 0;
     
-    // Количество документов за месяц
+    // Количество документов, опубликованных за текущий месяц
     const documentsCount = await this.get(`
       SELECT COUNT(*) as count FROM claim 
       WHERE publishedAt IS NOT NULL 
-      AND datetime(uploadedAt) > datetime('now', '-1 month')
+      AND strftime('%Y-%m', publishedAt) = strftime('%Y-%m', 'now')
     `);
     stats.documentsThisMonth = documentsCount?.count || 0;
     

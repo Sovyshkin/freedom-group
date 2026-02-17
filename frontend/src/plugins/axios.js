@@ -3,12 +3,12 @@ import { useAuthStore } from '@/stores/auth';
 
 // Определяем базовый URL в зависимости от окружения
 const getBaseURL = () => {
-  const hostname = window.location.hostname;
+  // const hostname = window.location.hostname;
   
-  // Если фронтенд открыт по IP адресу, используем тот же IP для бэкенда
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}/api`;
-  }
+  // // Если фронтенд открыт по IP адресу, используем тот же IP для бэкенда
+  // if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+  //   return `http://${hostname}/api`;
+  // }
   
   // Для localhost используем стандартный адрес
   return 'http://localhost:3001/api';

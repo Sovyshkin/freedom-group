@@ -4,11 +4,23 @@ require('dotenv').config();
 class TelegramService {
   constructor() {
     this.bot = null;
+    this.db = null;
     this.setupBot();
+  }
+
+  setDatabase(db) {
+    this.db = db;
   }
 
   setupBot() {
     const token = process.env.TELEGRAM_BOT_TOKEN;
+    const frontendUrl = process.env.FRONTEND_URL || '';
+    
+    // Отключаем Telegram бот на localhost
+    if (frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1')) {
+      console.log('ℹ️  Telegram бот отключен (localhost окружение)');
+      return;
+    }
     
     if (!token) {
       console.warn('⚠️ Telegram bot token не настроен');
@@ -16,8 +28,8 @@ class TelegramService {
     }
 
     try {
-      this.bot = new TelegramBot(token, { polling: false });
-      console.log('✅ Telegram бот инициализирован');
+      this.bot = new TelegramBot(token, { polling: true });
+      console.log('✅ Telegram бот инициализирован с polling');
       
       // Проверяем подключение
       this.bot.getMe().then((botInfo) => {
@@ -26,8 +38,76 @@ class TelegramService {
         console.error('❌ Ошибка подключения к Telegram:', error.message);
       });
       
+      // Обработчик команды /start
+      this.bot.onText(/\/start/, async (msg) => {
+        await this.handleStartCommand(msg);
+      });
+      
     } catch (error) {
       console.error('❌ Ошибка инициализации Telegram бота:', error.message);
+    }
+  }
+
+  async handleStartCommand(msg) {
+    const chatId = msg.chat.id;
+    const username = msg.from.username;
+    const firstName = msg.from.first_name;
+    
+    console.log(`📱 Получена команда /start от @${username} (chatId: ${chatId})`);
+    
+    // Отправляем приветственное сообщение
+    const welcomeMessage = `
+🎉 <b>Добро пожаловать в FREEDOM GROUP!</b>
+
+✅ <b>Вы успешно подключились к боту</b>
+
+Теперь вы будете получать уведомления о новых документах прямо в Telegram!
+
+💼 <b>Что вы будете получать:</b>
+📄 Уведомления о новых документах
+✨ Напоминания о важных событиях
+📊 Актуальную информацию
+
+🔗 <a href="${process.env.FRONTEND_URL}">Перейти в личный кабинет</a>
+
+<i>💡 Держите уведомления включенными, чтобы не пропустить важное!</i>
+    `.trim();
+    
+    try {
+      await this.sendMessage(chatId, welcomeMessage);
+      
+      // Если есть username, пытаемся обновить chat_id в базе данных
+      if (username && this.db) {
+        try {
+          // Ищем партнера с таким telegram username
+          const partner = await this.db.get(
+            'SELECT partnerId, name, telegram FROM partner WHERE telegram = ? OR telegram = ?',
+            [`@${username}`, username]
+          );
+          
+          if (partner) {
+            // Обновляем telegram поле на chat_id
+            await this.db.run(
+              'UPDATE partner SET telegram = ? WHERE partnerId = ?',
+              [chatId.toString(), partner.partnerId]
+            );
+            console.log(`✅ Сохранен chat_id ${chatId} для партнера ${partner.name}`);
+            
+            // Отправляем персонализированное сообщение
+            const personalMessage = `
+👤 <b>${partner.name}</b>, ваш аккаунт успешно привязан к Telegram!
+
+Теперь все уведомления будут приходить автоматически.
+            `.trim();
+            
+            await this.sendMessage(chatId, personalMessage);
+          }
+        } catch (dbError) {
+          console.error('❌ Ошибка обновления chat_id в БД:', dbError.message);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Ошибка отправки приветственного сообщения:`, error.message);
     }
   }
 
@@ -51,23 +131,71 @@ class TelegramService {
     }
   }
 
-  // Извлекаем chat_id из username или возвращаем как есть если это уже ID
+  // Извлекаем chat_id из telegram поля
   getChatId(telegramData) {
     if (!telegramData) return null;
     
     // Убираем @ если есть
     let chatId = telegramData.startsWith('@') ? telegramData.slice(1) : telegramData;
     
-    // Если это число, возвращаем как есть
-    if (/^\d+$/.test(chatId)) {
+    // Если это число, возвращаем как chat_id
+    if (/^-?\d+$/.test(chatId)) {
       return chatId;
     }
     
-    // Иначе возвращаем как username (для поиска нужно будет использовать другие методы)
+    // Иначе это username - предупреждаем, что нужно сначала отправить /start боту
+    console.warn(`⚠️ Telegram username ${telegramData} - пользователь должен отправить /start боту`);
     return `@${chatId}`;
   }
 
-  // Отправка уведомления о новых документах
+  // Отправка уведомления о публикации документов
+  async sendDocumentsPublishedNotification(telegramData, partnerName, documents) {
+    const chatId = this.getChatId(telegramData);
+    
+    // Build documents list
+    const documentsList = documents.map((doc, idx) => 
+      `${idx + 1}. 📄 <b>${doc.fileName}</b>\n   📅 ${doc.period} • ${doc.date}`
+    ).join('\n\n');
+    
+    const message = `
+🔔 <b>FREEDOM GROUP</b>
+📄 <b>Новые документы опубликованы!</b>
+
+👤 <b>Партнер:</b> ${partnerName}
+📊 <b>Документов:</b> ${documents.length}
+
+${documentsList}
+
+💼 Документы доступны для просмотра и скачивания в личном кабинете.
+
+🔗 <a href="${process.env.FRONTEND_URL}">Перейти в личный кабинет</a>
+
+<i>💡 Рекомендуем сохранить документы на своем устройстве</i>
+    `.trim();
+
+    const options = {
+      reply_markup: {
+        inline_keyboard: [[
+          {
+            text: '📱 Открыть кабинет',
+            url: process.env.FRONTEND_URL
+          }
+        ]]
+      }
+    };
+
+    try {
+      return await this.sendMessage(chatId, message, options);
+    } catch (error) {
+      if (chatId.startsWith('@')) {
+        console.warn(`⚠️ Не удалось отправить сообщение пользователю ${chatId}. Возможно, бот не имеет доступа к чату или пользователь не начал диалог с ботом.`);
+        throw new Error(`Невозможно отправить сообщение пользователю ${telegramData}. Убедитесь, что пользователь начал диалог с ботом.`);
+      }
+      throw error;
+    }
+  }
+
+  // Отправка уведомления о новых документах (старый метод для совместимости)
   async sendDocumentNotification(telegramData, partnerName, period) {
     const chatId = this.getChatId(telegramData);
     
