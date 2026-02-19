@@ -308,7 +308,9 @@ class Database {
   async getPartnerDocuments(partnerId, filters = {}) {
     let sql = `
       SELECT c.inc as claimId, c.dateBeg, c.dateEnd, c.amount, c.payAmount, 
-             c.taxAmount, c.publishedAt, c.created, c.created as Created,
+             c.taxAmount, c.publishedAt, 
+             c.created,
+             COALESCE(c.created, c.dateBeg) as Created,
              d.filename, d.size, d.mimetype, d.inc as documentId
       FROM claim c
       LEFT JOIN document d ON c.inc = d.claimId
@@ -325,7 +327,7 @@ class Database {
       params.push(filters.endDate);
     }
 
-    sql += ' ORDER BY c.publishedAt DESC';
+    sql += ' ORDER BY COALESCE(c.created, c.publishedAt, c.dateBeg) DESC';
     
     return this.all(sql, params);
   }

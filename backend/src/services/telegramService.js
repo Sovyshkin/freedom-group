@@ -14,13 +14,6 @@ class TelegramService {
 
   setupBot() {
     const token = process.env.TELEGRAM_BOT_TOKEN;
-    const frontendUrl = process.env.FRONTEND_URL || '';
-    
-    // Отключаем Telegram бот на localhost
-    if (frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1')) {
-      console.log('ℹ️  Telegram бот отключен (localhost окружение)');
-      return;
-    }
     
     if (!token) {
       console.warn('⚠️ Telegram bot token не настроен');
