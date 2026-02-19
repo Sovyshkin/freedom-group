@@ -181,7 +181,7 @@
                 <th>ID</th>
                 <th>Имя</th>
                 <th>Email</th>
-                <th>Telegram</th>
+                <th>Chat ID</th>
                 <th>Логин</th>
                 <th>Последний вход</th>
                 <th>Создан</th>
@@ -193,7 +193,7 @@
                 <td data-label="ID">{{ partner.Inc }}</td>
                 <td data-label="Имя">{{ partner.Name }}</td>
                 <td data-label="Email">{{ partner.Email }}</td>
-                <td data-label="Telegram">{{ partner.Telegram || '—' }}</td>
+                <td data-label="Chat ID">{{ partner.Telegram || '—' }}</td>
                 <td data-label="Логин">{{ partner.Alias }}</td>
                 <td data-label="Последний вход">{{ formatDateTime(partner.LastVisit) || '—' }}</td>
                 <td data-label="Создан">{{ formatDate(partner.CreatedAt) }}</td>
@@ -241,8 +241,11 @@
           </div>
           
           <div class="form-group">
-            <label>Telegram (опционально)</label>
-            <input v-model="newPartner.telegram" type="text" placeholder="@username или username" />
+            <label>Telegram Chat ID (опционально)</label>
+            <input v-model="newPartner.telegram" type="text" placeholder="Например: 123456789" />
+            <small style="color: #64748b; margin-top: 5px; display: block;">
+              💡 Партнер должен отправить /start боту и сообщить вам свой Chat ID
+            </small>
           </div>
           
           <div class="form-group">
@@ -371,8 +374,11 @@
           </div>
           
           <div class="form-group">
-            <label>Telegram (опционально)</label>
-            <input v-model="partnerToEdit.telegram" type="text" placeholder="@username или username" />
+            <label>Telegram Chat ID (опционально)</label>
+            <input v-model="partnerToEdit.telegram" type="text" placeholder="Например: 123456789" />
+            <small style="color: #64748b; margin-top: 5px; display: block;">
+              💡 Партнер должен отправить /start боту и сообщить вам свой Chat ID
+            </small>
           </div>
           
           <div class="form-group">

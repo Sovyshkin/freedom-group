@@ -43,6 +43,30 @@ class TelegramService {
         await this.handleStartCommand(msg);
       });
       
+      // Обработчик для callback query (нажатие на inline кнопки)
+      this.bot.on('callback_query', async (callbackQuery) => {
+        const msg = callbackQuery.message;
+        const data = callbackQuery.data;
+        const chatId = msg.chat.id;
+        
+        // Обработка копирования chatId
+        if (data.startsWith('copy_chatid_')) {
+          const chatIdToCopy = data.replace('copy_chatid_', '');
+          
+          try {
+            // Отправляем уведомление о копировании
+            await this.bot.answerCallbackQuery(callbackQuery.id, {
+              text: `Chat ID: ${chatIdToCopy}`,
+              show_alert: true
+            });
+            
+            console.log(`📋 Пользователь ${chatId} запросил свой Chat ID`);
+          } catch (error) {
+            console.error('❌ Ошибка обработки callback query:', error.message);
+          }
+        }
+      });
+      
     } catch (error) {
       console.error('❌ Ошибка инициализации Telegram бота:', error.message);
     }
@@ -50,12 +74,12 @@ class TelegramService {
 
   async handleStartCommand(msg) {
     const chatId = msg.chat.id;
-    const username = msg.from.username;
-    const firstName = msg.from.first_name;
+    const username = msg.from.username || 'пользователь';
+    const firstName = msg.from.first_name || '';
     
     console.log(`📱 Получена команда /start от @${username} (chatId: ${chatId})`);
     
-    // Отправляем приветственное сообщение
+    // Отправляем приветственное сообщение с chatId
     const welcomeMessage = `
 🎉 <b>Добро пожаловать в FREEDOM GROUP!</b>
 
@@ -68,44 +92,37 @@ class TelegramService {
 ✨ Напоминания о важных событиях
 📊 Актуальную информацию
 
+🆔 <b>Ваш Chat ID:</b> <code>${chatId}</code>
+
+⚠️ <b>Важно!</b> Сообщите этот Chat ID администратору при создании вашего аккаунта партнера, чтобы получать уведомления.
+
 🔗 <a href="${process.env.FRONTEND_URL}">Перейти в личный кабинет</a>
 
 <i>💡 Держите уведомления включенными, чтобы не пропустить важное!</i>
     `.trim();
     
-    try {
-      await this.sendMessage(chatId, welcomeMessage);
-      
-      // Если есть username, пытаемся обновить chat_id в базе данных
-      if (username && this.db) {
-        try {
-          // Ищем партнера с таким telegram username
-          const partner = await this.db.get(
-            'SELECT partnerId, name, telegram FROM partner WHERE telegram = ? OR telegram = ?',
-            [`@${username}`, username]
-          );
-          
-          if (partner) {
-            // Обновляем telegram поле на chat_id
-            await this.db.run(
-              'UPDATE partner SET telegram = ? WHERE partnerId = ?',
-              [chatId.toString(), partner.partnerId]
-            );
-            console.log(`✅ Сохранен chat_id ${chatId} для партнера ${partner.name}`);
-            
-            // Отправляем персонализированное сообщение
-            const personalMessage = `
-👤 <b>${partner.name}</b>, ваш аккаунт успешно привязан к Telegram!
-
-Теперь все уведомления будут приходить автоматически.
-            `.trim();
-            
-            await this.sendMessage(chatId, personalMessage);
-          }
-        } catch (dbError) {
-          console.error('❌ Ошибка обновления chat_id в БД:', dbError.message);
-        }
+    const options = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: '📋 Скопировать Chat ID',
+              callback_data: `copy_chatid_${chatId}`
+            }
+          ],
+          [
+            {
+              text: '🌐 Открыть личный кабинет',
+              url: process.env.FRONTEND_URL || 'https://freedomgroup.online'
+            }
+          ]
+        ]
       }
+    };
+    
+    try {
+      await this.sendMessage(chatId, welcomeMessage, options);
+      console.log(`✅ Приветственное сообщение отправлено: chatId ${chatId}`);
     } catch (error) {
       console.error(`❌ Ошибка отправки приветственного сообщения:`, error.message);
     }

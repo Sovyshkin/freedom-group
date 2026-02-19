@@ -78,9 +78,9 @@
             <thead>
               <tr>
                 <th>№</th>
-                <th @click="sortBy('publishedAt')" class="sortable">
+                <th @click="sortBy('createdAt')" class="sortable">
                   Дата создания
-                  <i :class="getSortIcon('publishedAt')"></i>
+                  <i :class="getSortIcon('createdAt')"></i>
                 </th>
                 <th>Период</th>
                 <th @click="sortBy('amount')" class="sortable">
@@ -95,7 +95,7 @@
             <tbody>
               <tr v-for="(doc, index) in paginatedDocuments" :key="doc.id">
                 <td data-label="№">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-                <td data-label="Дата создания">{{ formatDate(doc.publishedAt) }}</td>
+                <td data-label="Дата создания">{{ formatDate(doc.createdAt) }}</td>
                 <td data-label="Период">{{ doc.period }}</td>
                 <td data-label="Чистая сумма" class="amount">{{ formatMoney(doc.amount) }}</td>
                 <td data-label="Сумма по счету" class="amount">{{ formatMoney(doc.payAmount) }}</td>
@@ -207,7 +207,7 @@ const filters = ref({
 })
 
 // Sorting
-const sortField = ref('publishedAt')
+const sortField = ref('createdAt')
 const sortOrder = ref('desc')
 
 // Pagination
