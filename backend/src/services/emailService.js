@@ -8,32 +8,31 @@ class EmailService {
   }
 
   setupTransporter() {
-    const frontendUrl = process.env.FRONTEND_URL || '';
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = process.env.SMTP_PORT;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPassword = process.env.SMTP_PASSWORD;
     
-    // Отключаем SMTP на localhost
-    if (frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1')) {
-      console.log('ℹ️  SMTP отключен (localhost окружение)');
+    // Проверяем наличие настроек SMTP
+    if (!smtpHost || !smtpPort) {
+      console.log('ℹ️  SMTP не настроен - email уведомления отключены');
       return;
     }
     
     try {
-      // SMTP relay configuration - no auth needed
+      // Gmail SMTP configuration
       const smtpConfig = {
-        host: process.env.SMTP_HOST || 'smtp-relay.gmail.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: false, // STARTTLS
+        host: smtpHost,
+        port: parseInt(smtpPort),
+        secure: parseInt(smtpPort) === 465, // true for 465, false for 587
+        auth: smtpUser && smtpPassword ? {
+          user: smtpUser,
+          pass: smtpPassword
+        } : undefined,
         tls: {
           rejectUnauthorized: false
         }
       };
-
-      // Add auth only if credentials are provided
-      if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
-        smtpConfig.auth = {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASSWORD,
-        };
-      }
 
       this.transporter = nodemailer.createTransport(smtpConfig);
 
