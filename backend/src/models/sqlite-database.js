@@ -308,7 +308,8 @@ class Database {
   async getPartnerDocuments(partnerId, filters = {}) {
     let sql = `
       SELECT c.inc as claimId, c.dateBeg, c.dateEnd, c.amount, c.payAmount, 
-             c.taxAmount, c.publishedAt, c.created, d.filename, d.size, d.mimetype
+             c.taxAmount, c.publishedAt, c.created, c.created as Created,
+             d.filename, d.size, d.mimetype, d.inc as documentId
       FROM claim c
       LEFT JOIN document d ON c.inc = d.claimId
       WHERE c.partnerId = ?
