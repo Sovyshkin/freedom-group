@@ -67,14 +67,59 @@
             </div>
           </div>
           
+          <!-- Фильтры документов -->
+          <div class="filters-bar">
+            <div class="filter-group">
+              <label>Поиск:</label>
+              <input
+                v-model="documentSearchQuery"
+                type="text"
+                placeholder="Название файла..."
+                class="filter-input"
+              />
+            </div>
+            
+            <div class="filter-group">
+              <label>Партнёр:</label>
+              <select v-model="documentPartnerFilter" class="filter-select">
+                <option value="">Все партнёры</option>
+                <option v-for="partner in partners" :key="partner.Inc" :value="partner.Inc">
+                  {{ partner.Name }}
+                </option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <label>Дата от:</label>
+              <input
+                v-model="documentDateFrom"
+                type="date"
+                class="filter-input"
+              />
+            </div>
+            
+            <div class="filter-group">
+              <label>до:</label>
+              <input
+                v-model="documentDateTo"
+                type="date"
+                class="filter-input"
+              />
+            </div>
+            
+            <div class="filter-stats">
+              Показано: {{ filteredDocuments.length }} из {{ unpublishedClaims.length }}
+            </div>
+          </div>
+          
           <AppLoader v-if="loadingDocuments" />
           
-          <div v-else-if="unpublishedClaims.length === 0" class="empty-state">
+          <div v-else-if="filteredDocuments.length === 0" class="empty-state">
             <div class="empty-icon">
               <img src="@/assets/docs.png" alt="docs" width="32" height="32" />
             </div>
-            <h3>Нет документов для публикации</h3>
-            <p>Все загруженные документы уже опубликованы</p>
+            <h3>{{ unpublishedClaims.length === 0 ? 'Нет документов для публикации' : 'Ничего не найдено' }}</h3>
+            <p>{{ unpublishedClaims.length === 0 ? 'Все загруженные документы уже опубликованы' : 'Попробуйте изменить параметры фильтрации' }}</p>
           </div>
           
           <table v-else class="documents-table">
@@ -83,7 +128,7 @@
                 <th>
                   <input 
                     type="checkbox" 
-                    :checked="selectedClaims.length === unpublishedClaims.length"
+                    :checked="selectedClaims.length === filteredDocuments.length && filteredDocuments.length > 0"
                     @change="toggleSelectAll"
                   />
                 </th>
@@ -97,7 +142,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="claim in unpublishedClaims" :key="getClaimId(claim)">
+              <tr v-for="claim in filteredDocuments" :key="getClaimId(claim)">
                 <td data-label="Выбрать">
                   <input 
                     type="checkbox" 
@@ -173,6 +218,32 @@
             </div>
           </div>
           
+          <!-- Фильтры партнёров -->
+          <div class="filters-bar">
+            <div class="filter-group">
+              <label>Статус:</label>
+              <select v-model="partnerActiveFilter" class="filter-select">
+                <option value="all">Все</option>
+                <option value="active">Активные</option>
+                <option value="inactive">Неактивные</option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <label class="checkbox-label">
+                <input 
+                  v-model="partnerBirthdayFilter" 
+                  type="checkbox"
+                />
+                <span>День рождения в этом месяце</span>
+              </label>
+            </div>
+            
+            <div class="filter-stats">
+              Показано: {{ filteredPartners.length }} из {{ partners.length }}
+            </div>
+          </div>
+          
           <AppLoader v-if="loadingPartners" />
           
           <table v-else class="partners-table">
@@ -218,10 +289,356 @@
           </table>
         </div>
       </div>
+
+      <!-- Upload Tab -->
+      <div v-if="activeTab === 'upload'" class="tab-content">
+        <div class="upload-section">        
+          <div 
+            class="upload-area"
+            :class="{ dragover: isAutoUploadDragover }"
+            @drop.prevent="handleAutoUploadDrop"
+            @dragover.prevent="isAutoUploadDragover = true"
+            @dragleave="isAutoUploadDragover = false"
+            @click="$refs.autoUploadInput.click()"
+          >
+            <div class="upload-content">
+              <img src="@/assets/upload.png" alt="upload" width="48" height="48" />
+              <p>Перетащите файлы сюда или нажмите для выбора</p>
+              <span class="upload-hint">Можно загружать несколько файлов одновременно</span>
+            </div>
+            <input 
+              type="file" 
+              ref="autoUploadInput"
+              @change="handleAutoUploadFileSelect" 
+              accept=".xlsx,.xls"
+              multiple
+              style="display: none"
+            />
+          </div>
+          
+          <!-- Selected files preview -->
+          <div v-if="autoUploadFiles.length > 0" class="selected-files">
+            <h4>Выбранные файлы ({{ autoUploadFiles.length }})</h4>
+            <div class="files-list">
+              <div v-for="(file, index) in autoUploadFiles" :key="index" class="file-item">
+                <img src="@/assets/docs.png" alt="file" width="24" height="24" />
+                <div class="file-info">
+                  <span class="file-name">{{ file.name }}</span>
+                  <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                </div>
+                <button @click="removeAutoUploadFile(index)" class="btn-icon btn-delete">
+                  <img src="@/assets/delete.png" alt="delete" width="18" height="18" />
+                </button>
+              </div>
+            </div>
+            <div class="upload-actions">
+              <button @click="autoUploadFiles = []" class="btn btn-secondary">
+                Очистить
+              </button>
+              <button @click="uploadAutoFiles" :disabled="autoUploading" class="btn btn-primary">
+                <i v-if="autoUploading" class="fas fa-spinner fa-spin"></i>
+                {{ autoUploading ? 'Загрузка...' : 'Загрузить файлы' }}
+              </button>
+            </div>
+          </div>
+          
+          <!-- Upload results -->
+          <div v-if="autoUploadResults.length > 0" class="upload-results">
+            <h4>Результаты загрузки</h4>
+            <div class="results-list">
+              <div 
+                v-for="(result, index) in autoUploadResults" 
+                :key="index" 
+                :class="['result-item', result.success ? 'success' : 'error']"
+              >
+                <div class="result-icon">
+                  {{ result.success ? '✅' : '❌' }}
+                </div>
+                <div class="result-info">
+                  <span class="result-file">{{ result.fileName }}</span>
+                  <span class="result-message">{{ result.message }}</span>
+                  <span v-if="result.partnerName" class="result-partner">Партнёр: {{ result.partnerName }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admins Tab (только для superadmin) -->
+      <div v-if="activeTab === 'admins' && isSuperAdmin" class="tab-content">
+        <div class="admins-section">
+          <div class="section-header">
+            <h3>Управление администраторами</h3>
+            <button @click="showCreateAdminModal = true" class="btn btn-primary">
+              <img src="@/assets/add.png" alt="add" width="18" height="18" class="icon-img-invert" />
+              Добавить администратора
+            </button>
+          </div>
+          
+          <AppLoader v-if="loadingAdmins" />
+          
+          <table v-else-if="admins.length > 0" class="admins-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Логин</th>
+                <th>Email</th>
+                <th>Роль</th>
+                <th>Последний вход</th>
+                <th>Создан</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="admin in admins" :key="admin.inc">
+                <td data-label="ID">{{ admin.inc }}</td>
+                <td data-label="Логин">{{ admin.username }}</td>
+                <td data-label="Email">{{ admin.email }}</td>
+                <td data-label="Роль">
+                  <span :class="['badge', admin.role === 'superadmin' ? 'badge-superadmin' : 'badge-admin']">
+                    {{ admin.role === 'superadmin' ? 'Суперадмин' : 'Администратор' }}
+                  </span>
+                </td>
+                <td data-label="Последний вход">{{ formatDateTime(admin.lastLogin) || '—' }}</td>
+                <td data-label="Создан">{{ formatDate(admin.createdAt) }}</td>
+                <td data-label="Действия">
+                  <div class="action-buttons">
+                    <button 
+                      @click="openEditAdminModal(admin)" 
+                      class="btn-icon" 
+                      title="Редактировать"
+                    >
+                      <img src="@/assets/edit.png" alt="edit" width="18" height="18" />
+                    </button>
+                    <button 
+                      v-if="admin.role !== 'superadmin' && admin.inc !== authStore.user?.id"
+                      @click="confirmDeleteAdmin(admin)" 
+                      class="btn-icon btn-delete" 
+                      title="Удалить"
+                    >
+                      <img src="@/assets/delete.png" alt="delete" width="18" height="18" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          
+          <div v-else class="empty-state">
+            <p>Администраторы не найдены</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Log Tab -->
+      <div v-if="activeTab === 'audit' && isSuperAdmin" class="tab-content">
+        <div class="audit-section">
+          <div class="section-header">
+            <h3>Журнал событий</h3>
+            <button @click="refreshAuditLogs" class="btn btn-secondary">
+              <img src="@/assets/refresh.png" alt="refresh" width="18" height="18" class="icon-img-invert" />
+              Обновить
+            </button>
+          </div>
+
+          <!-- Фильтры -->
+          <div class="filters-bar">
+            <div class="filter-group">
+              <label>Поиск:</label>
+              <input
+                v-model="auditSearchQuery"
+                type="text"
+                placeholder="Администратор, действие, сущность..."
+                class="filter-input"
+              />
+            </div>
+
+            <div class="filter-group">
+              <label>Администратор:</label>
+              <select v-model="auditAdminFilter" class="filter-select">
+                <option value="">Все администраторы</option>
+                <option v-for="admin in admins" :key="admin.inc" :value="admin.inc">
+                  {{ admin.username }}
+                </option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label>Тип:</label>
+              <select v-model="auditEntityTypeFilter" class="filter-select">
+                <option value="">Все типы</option>
+                <option value="partner">Партнёр</option>
+                <option value="document">Документ</option>
+                <option value="claim">Претензия</option>
+                <option value="admin">Администратор</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label>Дата от:</label>
+              <input
+                v-model="auditDateFrom"
+                type="date"
+                class="filter-input"
+              />
+            </div>
+
+            <div class="filter-group">
+              <label>Дата до:</label>
+              <input
+                v-model="auditDateTo"
+                type="date"
+                class="filter-input"
+              />
+            </div>
+
+            <button @click="clearAuditFilters" class="btn btn-secondary">
+              Сбросить фильтры
+            </button>
+          </div>
+
+          <!-- Статистика -->
+          <div v-if="filteredAuditLogs.length > 0" class="filters-stats">
+            Показано: {{ filteredAuditLogs.length }} из {{ auditLogs.length }}
+          </div>
+
+          <AppLoader v-if="loadingAuditLogs" />
+
+          <table v-else-if="filteredAuditLogs.length > 0" class="audit-table">
+            <thead>
+              <tr>
+                <th>Дата/Время</th>
+                <th>Администратор</th>
+                <th>Действие</th>
+                <th>Детали</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="log in filteredAuditLogs" :key="log.id">
+                <td data-label="Дата/Время" class="audit-datetime">{{ formatDateTime(log.timestamp) }}</td>
+                <td data-label="Администратор" class="audit-admin">
+                  <span class="admin-name">{{ getAdminName(log) }}</span>
+                </td>
+                <td data-label="Действие" class="audit-action">
+                  <span :class="['action-badge', getActionBadgeClass(log.action)]">
+                    {{ formatAction(log.action) }}
+                  </span>
+                </td>
+                <td data-label="Детали" class="audit-details">
+                  <button 
+                    v-if="log.details"
+                    @click="showAuditDetails(log)" 
+                    class="btn-details"
+                  >
+                    Подробнее
+                  </button>
+                  <span v-else class="no-details">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div v-else class="empty-state">
+            <p>События не найдены</p>
+          </div>
+        </div>
+      </div>
     </div>
     
+    <!-- Create Admin Modal -->
+    <div v-if="showCreateAdminModal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Создать администратора</h3>
+          <button @click="showCreateAdminModal = false" class="close-btn">×</button>
+        </div>
+        
+        <form @submit.prevent="createAdmin" class="modal-body">
+          <div class="form-group">
+            <label>Логин *</label>
+            <input v-model="newAdmin.username" type="text" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Email *</label>
+            <input v-model="newAdmin.email" type="email" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Пароль *</label>
+            <input v-model="newAdmin.password" type="password" required minlength="6" />
+            <small>Минимум 6 символов</small>
+          </div>
+        </form>
+        
+        <div class="modal-footer">
+          <button type="button" @click="showCreateAdminModal = false" class="btn btn-secondary">
+            Отмена
+          </button>
+          <button type="submit" @click="createAdmin" class="btn btn-primary" :disabled="creatingAdmin">
+            {{ creatingAdmin ? 'Создание...' : 'Создать' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Edit Admin Modal -->
+    <div v-if="showEditAdminModal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Редактировать администратора</h3>
+          <button @click="showEditAdminModal = false" class="close-btn">×</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Логин</label>
+            <input
+              v-model="editAdminData.username"
+              type="text"
+              class="form-input"
+              placeholder="Логин"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Email</label>
+            <input
+              v-model="editAdminData.email"
+              type="email"
+              class="form-input"
+              placeholder="Email"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Новый пароль</label>
+            <input
+              v-model="editAdminData.password"
+              type="password"
+              class="form-input"
+              placeholder="Оставьте пустым, если не хотите менять"
+              minlength="6"
+            />
+            <small style="color: #6b7280; font-size: 12px;">Минимум 6 символов. Оставьте пустым, чтобы не менять пароль.</small>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button @click="showEditAdminModal = false" class="btn btn-outline-blue" :disabled="editingAdmin">Отмена</button>
+          <button @click="updateAdmin" class="btn btn-primary" :disabled="editingAdmin">
+            <i v-if="editingAdmin" class="fas fa-spinner fa-spin"></i>
+            Сохранить
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Create Partner Modal -->
-    <div v-if="showCreatePartnerModal" class="modal-overlay" @click.self="showCreatePartnerModal = false">
+    <div v-if="showCreatePartnerModal" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <h3>Добавить партнера</h3>
@@ -257,6 +674,16 @@
             <label>Пароль *</label>
             <input v-model="newPartner.password" type="password" required placeholder="Пароль для входа" />
           </div>
+          
+          <div class="form-group">
+            <label>Дата рождения (опционально)</label>
+            <input v-model="newPartner.birthDate" type="date" />
+          </div>
+          
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+            <input v-model="newPartner.active" type="checkbox" id="newPartnerActive" />
+            <label for="newPartnerActive" style="margin: 0; cursor: pointer;">Активный</label>
+          </div>
         </form>
         
         <div class="modal-footer">
@@ -272,7 +699,7 @@
     </div>
     
     <!-- Upload Files Modal -->
-    <div v-if="showUploadModal" class="modal-overlay" @click.self="showUploadModal = false">
+    <div v-if="showUploadModal" class="modal-overlay">
       <div class="modal modal-large">
         <div class="modal-header">
           <h3>Загрузка файлов для {{ currentUploadPartnerName }}</h3>
@@ -354,7 +781,7 @@
     </div>
     
     <!-- Edit Partner Modal -->
-    <div v-if="showEditPartnerModal" class="modal-overlay" @click.self="showEditPartnerModal = false">
+    <div v-if="showEditPartnerModal" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <h3>Редактировать партнера</h3>
@@ -390,6 +817,16 @@
             <label>Новый пароль (опционально)</label>
             <input v-model="partnerToEdit.newPassword" type="password" placeholder="Оставьте пустым, чтобы не менять" />
           </div>
+          
+          <div class="form-group">
+            <label>Дата рождения (опционально)</label>
+            <input v-model="partnerToEdit.birthDate" type="date" />
+          </div>
+          
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+            <input v-model="partnerToEdit.active" type="checkbox" id="editPartnerActive" />
+            <label for="editPartnerActive" style="margin: 0; cursor: pointer;">Активный</label>
+          </div>
         </form>
         
         <div class="modal-footer">
@@ -405,7 +842,7 @@
     </div>
     
     <!-- Partner Documents Modal -->
-    <div v-if="showPartnerDocumentsModal" class="modal-overlay" @click.self="showPartnerDocumentsModal = false">
+    <div v-if="showPartnerDocumentsModal" class="modal-overlay">
       <div class="modal modal-large">
         <div class="modal-header">
           <h3>Документы партнера: {{ partnerToEdit?.name }}</h3>
@@ -463,7 +900,7 @@
     />
 
     <!-- Confirmation Modal -->
-    <div v-if="showConfirmModal" class="modal-overlay" @click.self="handleConfirmNo">
+    <div v-if="showConfirmModal" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <h3>{{ confirmTitle }}</h3>
@@ -479,6 +916,48 @@
           <button @click="handleConfirmYes" class="btn btn-primary" :disabled="confirmLoading">
             <i v-if="confirmLoading" class="fas fa-spinner fa-spin"></i>
             {{ confirmOkText }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Details Modal -->
+    <div v-if="showAuditDetailsModal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Детали события</h3>
+          <button @click="showAuditDetailsModal = false" class="close-btn">×</button>
+        </div>
+
+        <div v-if="selectedAuditLog" class="modal-body">
+          <div class="audit-details">
+            <div class="detail-row">
+              <span class="detail-label">Дата/Время:</span>
+              <span class="detail-value">{{ formatDateTime(selectedAuditLog.timestamp) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Администратор:</span>
+              <span class="detail-value">{{ selectedAuditLog.admin_username || '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Действие:</span>
+              <span class="detail-value">{{ formatAction(selectedAuditLog.action) }}</span>
+            </div>
+            <!-- Тип сущности и Сущность удалены по запросу -->
+            <div class="detail-row">
+              <span class="detail-label">IP адрес:</span>
+              <span class="detail-value">{{ selectedAuditLog.ip_address || '—' }}</span>
+            </div>
+            <div v-if="selectedAuditLog.details" class="detail-row">
+              <span class="detail-label">Подробности:</span>
+              <pre class="detail-json">{{ JSON.stringify(selectedAuditLog.details, null, 2) }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button @click="showAuditDetailsModal = false" class="btn btn-primary">
+            Закрыть
           </button>
         </div>
       </div>
@@ -506,17 +985,39 @@ const user = ref(null)
 const stats = ref({})
 const activeTab = ref('partners')
 
+// Computed для проверки роли суперадмина
+const isSuperAdmin = computed(() => {
+  return authStore.user?.adminRole === 'superadmin'
+})
+
 // Tabs
-const tabs = [
-  { id: 'partners', label: 'Партнеры' },
-  { id: 'documents', label: 'Документы' }
-]
+const tabs = computed(() => {
+  const baseTabs = [
+    { id: 'partners', label: 'Партнеры' },
+    { id: 'upload', label: 'Загрузка' },
+    { id: 'documents', label: 'Документы' }
+  ]
+  
+  // Добавляем вкладки только для суперадмина
+  if (isSuperAdmin.value) {
+    baseTabs.push({ id: 'admins', label: 'Администраторы' })
+    baseTabs.push({ id: 'audit', label: 'Журнал событий' })
+  }
+  
+  return baseTabs
+})
 
 // File upload
 const selectedFiles = ref([])
 const uploading = ref(false)
 const uploadResults = ref([])
 const isDragover = ref(false)
+
+// Auto upload (с определением партнёра из Excel)
+const autoUploadFiles = ref([])
+const autoUploading = ref(false)
+const autoUploadResults = ref([])
+const isAutoUploadDragover = ref(false)
 
 // Documents
 const unpublishedClaims = ref([])
@@ -527,6 +1028,10 @@ const publishing = ref(false)
 const loadingStats = ref(false)
 const loadingPartnerDocuments = ref(false)
 const documentsFilter = ref('unpublished') // 'unpublished' or 'published'
+const documentSearchQuery = ref('') // поиск по названию файла
+const documentPartnerFilter = ref('') // фильтр по партнёру (partnerId)
+const documentDateFrom = ref('') // начало диапазона дат
+const documentDateTo = ref('') // конец диапазона дат
 
 const setDocumentsFilter = (value) => {
   documentsFilter.value = value
@@ -542,6 +1047,8 @@ const showUploadModal = ref(false)
 const partners = ref([])
 const loadingPartners = ref(false)
 const partnerSearchQuery = ref('')
+const partnerActiveFilter = ref('all') // 'all' | 'active' | 'inactive'
+const partnerBirthdayFilter = ref(false) // показывать только с ДР в этом месяце
 const showCreatePartnerModal = ref(false)
 const creatingPartner = ref(false)
 const showEditPartnerModal = ref(false)
@@ -558,8 +1065,40 @@ const newPartner = ref({
   email: '',
   telegram: '',
   alias: '',
+  password: '',
+  birthDate: '',
+  active: true
+})
+
+// Admins (только для superadmin)
+const admins = ref([])
+const loadingAdmins = ref(false)
+const showCreateAdminModal = ref(false)
+const creatingAdmin = ref(false)
+const showEditAdminModal = ref(false)
+const editingAdmin = ref(false)
+const adminToEdit = ref(null)
+const newAdmin = ref({
+  username: '',
+  email: '',
   password: ''
 })
+const editAdminData = ref({
+  username: '',
+  email: '',
+  password: ''
+})
+
+// Audit Logs (только для superadmin)
+const auditLogs = ref([])
+const loadingAuditLogs = ref(false)
+const auditSearchQuery = ref('')
+const auditAdminFilter = ref('')
+const auditEntityTypeFilter = ref('')
+const auditDateFrom = ref('')
+const auditDateTo = ref('')
+const showAuditDetailsModal = ref(false)
+const selectedAuditLog = ref(null)
 
 // Confirmation modal state
 const showConfirmModal = ref(false)
@@ -655,20 +1194,130 @@ const removeFile = (index) => {
 // clearFiles removed — upload modal uses closeUploadModal to reset state
 
 const filteredPartners = computed(() => {
-  if (!partnerSearchQuery.value) return partners.value
+  let filtered = partners.value
   
-  const query = partnerSearchQuery.value.toLowerCase()
-  return partners.value.filter(p => {
-    const name = (p.Name || p.name || '').toLowerCase()
-    const email = (p.Email || p.email || '').toLowerCase()
-    const inc = String(p.Inc || p.partnerId || '')
-    const alias = (p.Alias || p.alias || '').toLowerCase()
-    
-    return name.includes(query) || 
-           email.includes(query) || 
-           inc.includes(query) ||
-           alias.includes(query)
-  })
+  // Фильтр по статусу активности
+  if (partnerActiveFilter.value === 'active') {
+    filtered = filtered.filter(p => p.Active === 1 || p.Active === true)
+  } else if (partnerActiveFilter.value === 'inactive') {
+    filtered = filtered.filter(p => p.Active === 0 || p.Active === false)
+  }
+  
+  // Фильтр по дню рождения в этом месяце
+  if (partnerBirthdayFilter.value) {
+    const currentMonth = new Date().getMonth()
+    filtered = filtered.filter(p => {
+      if (!p.BirthDate) return false
+      const birthDate = new Date(p.BirthDate)
+      return birthDate.getMonth() === currentMonth
+    })
+  }
+  
+  // Поисковый фильтр
+  if (partnerSearchQuery.value) {
+    const query = partnerSearchQuery.value.toLowerCase()
+    filtered = filtered.filter(p => {
+      const name = (p.Name || p.name || '').toLowerCase()
+      const email = (p.Email || p.email || '').toLowerCase()
+      const inc = String(p.Inc || p.partnerId || '')
+      const alias = (p.Alias || p.alias || '').toLowerCase()
+      
+      return name.includes(query) || 
+             email.includes(query) || 
+             inc.includes(query) ||
+             alias.includes(query)
+    })
+  }
+  
+  return filtered
+})
+
+// Фильтрация документов
+const filteredDocuments = computed(() => {
+  let filtered = unpublishedClaims.value
+  
+  // Фильтр по партнёру
+  if (documentPartnerFilter.value) {
+    filtered = filtered.filter(doc => String(doc.partnerId) === String(documentPartnerFilter.value))
+  }
+  
+  // Фильтр по диапазону дат загрузки
+  if (documentDateFrom.value) {
+    const fromDate = new Date(documentDateFrom.value)
+    fromDate.setHours(0, 0, 0, 0)
+    filtered = filtered.filter(doc => {
+      const docDate = new Date(doc.uploadedAt || doc.Created)
+      docDate.setHours(0, 0, 0, 0)
+      return docDate >= fromDate
+    })
+  }
+  
+  if (documentDateTo.value) {
+    const toDate = new Date(documentDateTo.value)
+    toDate.setHours(23, 59, 59, 999)
+    filtered = filtered.filter(doc => {
+      const docDate = new Date(doc.uploadedAt || doc.Created)
+      return docDate <= toDate
+    })
+  }
+  
+  // Поисковый фильтр по названию файла
+  if (documentSearchQuery.value) {
+    const query = documentSearchQuery.value.toLowerCase()
+    filtered = filtered.filter(doc => {
+      const fileName = (doc.fileName || doc.originalName || '').toLowerCase()
+      return fileName.includes(query)
+    })
+  }
+  
+  return filtered
+})
+
+const filteredAuditLogs = computed(() => {
+  let filtered = auditLogs.value
+  
+  // Фильтр по администратору
+  if (auditAdminFilter.value) {
+    filtered = filtered.filter(log => String(log.admin_id) === String(auditAdminFilter.value))
+  }
+  
+  // Фильтр по типу сущности
+  if (auditEntityTypeFilter.value) {
+    filtered = filtered.filter(log => log.entity_type === auditEntityTypeFilter.value)
+  }
+  
+  // Фильтр по дате от
+  if (auditDateFrom.value) {
+    const fromDate = new Date(auditDateFrom.value)
+    fromDate.setHours(0, 0, 0, 0)
+    filtered = filtered.filter(log => {
+      const logDate = new Date(log.timestamp)
+      return logDate >= fromDate
+    })
+  }
+  
+  // Фильтр по дате до
+  if (auditDateTo.value) {
+    const toDate = new Date(auditDateTo.value)
+    toDate.setHours(23, 59, 59, 999)
+    filtered = filtered.filter(log => {
+      const logDate = new Date(log.timestamp)
+      return logDate <= toDate
+    })
+  }
+  
+  // Поисковый фильтр
+  if (auditSearchQuery.value) {
+    const query = auditSearchQuery.value.toLowerCase()
+    filtered = filtered.filter(log => {
+      const adminName = (log.admin_username || '').toLowerCase()
+      const action = (log.action || '').toLowerCase()
+      const entityName = (log.entity_name || '').toLowerCase()
+      return adminName.includes(query) || action.includes(query) || entityName.includes(query)
+    })
+  }
+  
+  return filtered
 })
 
 const openUploadForPartner = (partner) => {
@@ -759,6 +1408,87 @@ const refreshDocuments = async () => {
     })
   } finally {
     loadingDocuments.value = false
+  }
+}
+
+// Auto upload functions (с определением партнёра из Excel)
+const handleAutoUploadDrop = (e) => {
+  isAutoUploadDragover.value = false
+  const files = Array.from(e.dataTransfer.files).filter(f => 
+    f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+  )
+  autoUploadFiles.value = [...autoUploadFiles.value, ...files]
+}
+
+const handleAutoUploadFileSelect = (e) => {
+  const files = Array.from(e.target.files)
+  autoUploadFiles.value = [...autoUploadFiles.value, ...files]
+  e.target.value = '' // Reset input
+}
+
+const removeAutoUploadFile = (index) => {
+  autoUploadFiles.value.splice(index, 1)
+}
+
+const uploadAutoFiles = async () => {
+  if (autoUploadFiles.value.length === 0) return
+  
+  autoUploading.value = true
+  const formData = new FormData()
+  
+  autoUploadFiles.value.forEach(file => {
+    formData.append('files', file)
+  })
+  
+  try {
+    const response = await api.post('/admin/auto-upload-files', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    autoUploadResults.value = [
+      ...response.data.results.map(r => ({ 
+        ...r, 
+        success: true,
+        fileName: r.fileName || r.filename,
+        partnerName: r.partnerName
+      })),
+      ...response.data.errors.map(e => ({ 
+        ...e, 
+        success: false,
+        fileName: e.fileName || e.filename
+      }))
+    ]
+    
+    const successCount = response.data.results.length
+    const errorCount = response.data.errors.length
+    
+    if (successCount > 0) {
+      notificationStore.addNotification({
+        type: 'success',
+        message: `Успешно загружено: ${successCount} файл(ов)`
+      })
+    }
+    
+    if (errorCount > 0) {
+      notificationStore.addNotification({
+        type: 'error',
+        message: `Ошибок: ${errorCount} файл(ов)`
+      })
+    }
+    
+    autoUploadFiles.value = []
+    refreshDocuments()
+    
+  } catch (error) {
+    console.error('Ошибка автоматической загрузки:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки: ' + (error.response?.data?.message || error.message)
+    })
+  } finally {
+    autoUploading.value = false
   }
 }
 
@@ -899,6 +1629,8 @@ const editPartner = (partner) => {
     email: partner.Email,
     telegram: partner.Telegram,
     alias: partner.Alias || '',
+    birthDate: partner.BirthDate ? partner.BirthDate.split('T')[0] : '',
+    active: partner.Active !== 0,
     newPassword: ''
   }
   showEditPartnerModal.value = true
@@ -911,7 +1643,9 @@ const updatePartner = async () => {
       name: partnerToEdit.value.name,
       email: partnerToEdit.value.email,
       telegram: partnerToEdit.value.telegram,
-      alias: partnerToEdit.value.alias
+      alias: partnerToEdit.value.alias,
+      birthDate: partnerToEdit.value.birthDate || null,
+      active: partnerToEdit.value.active ? 1 : 0
     }
     
     if (partnerToEdit.value.newPassword) {
@@ -1056,10 +1790,10 @@ const deletePartnerDocument = async (doc) => {
 }
 
 const toggleSelectAll = () => {
-  if (selectedClaims.value.length === unpublishedClaims.value.length) {
+  if (selectedClaims.value.length === filteredDocuments.value.length && filteredDocuments.value.length > 0) {
     selectedClaims.value = []
   } else {
-    selectedClaims.value = unpublishedClaims.value.map(claim => getClaimId(claim))
+    selectedClaims.value = filteredDocuments.value.map(claim => getClaimId(claim))
   }
 }
 
@@ -1167,7 +1901,7 @@ const createPartner = async () => {
     })
     
     showCreatePartnerModal.value = false
-    newPartner.value = { name: '', email: '', telegram: '', alias: '', password: '' }
+    newPartner.value = { name: '', email: '', telegram: '', alias: '', password: '', birthDate: '', active: true }
     loadPartners()
     loadData()
     
@@ -1193,6 +1927,261 @@ const formatFileSize = (bytes) => {
   const idx = Math.min(Math.max(i, 0), sizes.length - 1)
   return parseFloat((b / Math.pow(k, idx)).toFixed(2)) + ' ' + sizes[idx]
 }
+
+// ============= МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ АДМИНАМИ (только для superadmin) =============
+
+const loadAdmins = async () => {
+  if (!isSuperAdmin.value) return
+  
+  loadingAdmins.value = true
+  try {
+    const response = await api.get('/admin/admins')
+    admins.value = response.data.admins
+  } catch (error) {
+    console.error('Ошибка загрузки админов:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки списка администраторов'
+    })
+  } finally {
+    loadingAdmins.value = false
+  }
+}
+
+const createAdmin = async () => {
+  if (!newAdmin.value.username || !newAdmin.value.email || !newAdmin.value.password) {
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Заполните все обязательные поля'
+    })
+    return
+  }
+  
+  creatingAdmin.value = true
+  try {
+    await api.post('/admin/admins', newAdmin.value)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Администратор успешно создан'
+    })
+    
+    showCreateAdminModal.value = false
+    newAdmin.value = { username: '', email: '', password: '' }
+    
+    await loadAdmins()
+  } catch (error) {
+    console.error('Ошибка создания админа:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: error.response?.data?.message || 'Ошибка создания администратора'
+    })
+  } finally {
+    creatingAdmin.value = false
+  }
+}
+
+const confirmDeleteAdmin = (admin) => {
+  openConfirm({
+    title: 'Удалить администратора',
+    message: `Вы уверены, что хотите удалить администратора "${admin.username}"?`,
+    confirmText: 'Удалить',
+    onConfirm: () => deleteAdmin(admin)
+  })
+}
+
+const deleteAdmin = async (admin) => {
+  try {
+    await api.delete(`/admin/admins/${admin.inc}`)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Администратор удален'
+    })
+    
+    await loadAdmins()
+  } catch (error) {
+    console.error('Ошибка удаления админа:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: error.response?.data?.message || 'Ошибка удаления администратора'
+    })
+  }
+}
+
+const openEditAdminModal = (admin) => {
+  adminToEdit.value = admin
+  editAdminData.value = {
+    username: admin.username,
+    email: admin.email || '',
+    password: ''
+  }
+  showEditAdminModal.value = true
+}
+
+const updateAdmin = async () => {
+  if (!editAdminData.value.username || !editAdminData.value.email) {
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Заполните все обязательные поля'
+    })
+    return
+  }
+
+  if (editAdminData.value.password && editAdminData.value.password.length < 6) {
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Пароль должен быть минимум 6 символов'
+    })
+    return
+  }
+
+  try {
+    editingAdmin.value = true
+    
+    await api.put(`/admin/admins/${adminToEdit.value.inc}`, editAdminData.value)
+    
+    notificationStore.addNotification({
+      type: 'success',
+      message: 'Данные администратора обновлены'
+    })
+    
+    showEditAdminModal.value = false
+    editAdminData.value = { username: '', email: '', password: '' }
+    await loadAdmins()
+  } catch (error) {
+    console.error('Ошибка обновления админа:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: error.response?.data?.message || 'Ошибка обновления администратора'
+    })
+  } finally {
+    editingAdmin.value = false
+  }
+}
+
+// ============= AUDIT LOGS =============
+
+const loadAuditLogs = async () => {
+  if (!isSuperAdmin.value) return
+  
+  try {
+    loadingAuditLogs.value = true
+    
+    const params = {}
+    if (auditAdminFilter.value) params.adminId = auditAdminFilter.value
+    if (auditEntityTypeFilter.value) params.entityType = auditEntityTypeFilter.value
+    if (auditDateFrom.value) params.dateFrom = auditDateFrom.value
+    if (auditDateTo.value) params.dateTo = auditDateTo.value
+    if (auditSearchQuery.value) params.search = auditSearchQuery.value
+    
+    const response = await api.get('/audit-logs', { params })
+    auditLogs.value = response.data.logs
+    
+  } catch (error) {
+    console.error('Ошибка загрузки audit logs:', error)
+    notificationStore.addNotification({
+      type: 'error',
+      message: 'Ошибка загрузки журнала событий'
+    })
+  } finally {
+    loadingAuditLogs.value = false
+  }
+}
+
+const refreshAuditLogs = () => {
+  loadAuditLogs()
+}
+
+const clearAuditFilters = () => {
+  auditSearchQuery.value = ''
+  auditAdminFilter.value = ''
+  auditEntityTypeFilter.value = ''
+  auditDateFrom.value = ''
+  auditDateTo.value = ''
+}
+
+const showAuditDetails = (log) => {
+  selectedAuditLog.value = log
+  showAuditDetailsModal.value = true
+}
+
+const formatAction = (action) => {
+  const translations = {
+    // Партнёры
+    'create_partner': 'Создание партнёра',
+    'update_partner': 'Обновление партнёра',
+    'delete_partner': 'Удаление партнёра',
+    
+    // Документы
+    'upload_document': 'Загрузка документа',
+    'auto_upload_files': 'Автозагрузка документов',
+    'publish_claims': 'Публикация претензий',
+    'publish_document': 'Публикация документа',
+    'unpublish_claims': 'Снятие публикации претензий',
+    'delete_claim': 'Удаление претензии',
+    'delete_document': 'Удаление документа',
+    
+    // Администраторы
+    'create_admin': 'Создание администратора',
+    'update_admin': 'Обновление администратора',
+    'delete_admin': 'Удаление администратора',
+    'update_admin_password': 'Изменение пароля администратора',
+    
+    // Авторизация
+    'login': 'Вход в систему',
+    'logout': 'Выход из системы',
+    'admin_login': 'Вход администратора',
+    'admin_login_attempt': 'Попытка входа',
+    'admin_logout': 'Выход администратора',
+    'partner_login': 'Вход партнёра',
+    'partner_logout': 'Выход партнёра',
+    
+      // Прочее
+      'view_document': 'Просмотр документа',
+      'view_documents': 'Просмотр документов',
+      'download_document': 'Скачивание документа',
+      'password_reset_request': 'Запрос сброса пароля',
+      'password_reset_complete': 'Завершение сброса пароля',
+      'export_data': 'Экспорт данных',
+      'import_data': 'Импорт данных',
+      'system_config_change': 'Изменение настроек системы',
+      'partner_login_attempt': 'Попытка входа партнёра',
+      'upload_files': 'Загрузка файлов'
+  }
+  return translations[action] || action
+}
+
+// formatEntityType removed — `Тип/Сущность` больше не отображаются в UI
+
+const getActionBadgeClass = (action) => {
+  if (action.includes('create') || action.includes('upload')) return 'badge-success'
+  if (action.includes('update') || action.includes('change')) return 'badge-warning'
+  if (action.includes('delete')) return 'badge-danger'
+  if (action.includes('publish') || action.includes('view') || action.includes('download')) return 'badge-info'
+  if (action.includes('login') || action.includes('logout')) return 'badge-purple'
+  if (action.includes('export') || action.includes('import')) return 'badge-teal'
+  return 'badge-default'
+}
+
+const getAdminName = (log) => {
+  if (log.admin_username && log.admin_username !== '—') return log.admin_username
+  if (log.details?.adminUsername) return log.details.adminUsername
+
+  const possibleId = log.userId || log.details?.adminId || log.details?.admin_id || null
+  if (possibleId) {
+    // Попробуем найти в загруженных админах
+    const found = admins.value.find(a => a.inc === possibleId || a.inc === Number(possibleId))
+    if (found) return found.username
+    return `ID:${possibleId}`
+  }
+
+  return 'Система'
+}
+
+// NOTE: `Тип` и `Сущность` больше не отображаются в UI; helper functions removed to satisfy linter
+
+// ============= УТИЛИТЫ =============
 
 const toTimestampMs = (value) => {
   if (value == null || value === '') return null
@@ -1315,6 +2304,10 @@ const handleTabChange = () => {
     refreshDocuments()
   } else if (activeTab.value === 'partners') {
     loadPartners()
+  } else if (activeTab.value === 'admins' && isSuperAdmin.value) {
+    loadAdmins()
+  } else if (activeTab.value === 'audit' && isSuperAdmin.value) {
+    loadAuditLogs()
   }
 }
 
@@ -1529,8 +2522,47 @@ html, body, #app {
   cursor: pointer;
 }
 
+.upload-instructions {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.upload-instructions h4 {
+  margin: 0 0 12px 0;
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.upload-instructions p {
+  margin: 0 0 12px 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.upload-instructions ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #64748b;
+}
+
+.upload-instructions li {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
 .selected-files {
   margin-bottom: 30px;
+}
+
+.files-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0;
 }
 
 .file-list {
@@ -1621,7 +2653,8 @@ html, body, #app {
 
 .result-item {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid #e9ecef;
 }
@@ -1630,9 +2663,41 @@ html, body, #app {
   border-bottom: none;
 }
 
+.result-item.success {
+  background: #f0fdf4;
+}
+
 .result-item.error {
   background: #fff5f5;
   color: #b91c1c;
+}
+
+.result-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.result-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-file {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.result-message {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.result-partner {
+  font-size: 13px;
+  color: #2563eb;
+  font-weight: 500;
 }
 
 .section-header {
@@ -1651,6 +2716,123 @@ html, body, #app {
   color: #1e293b;
   font-weight: 600;
   font-size: 18px;
+}
+
+/* Панель фильтров */
+.filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.filter-btn {
+  padding: 6px 14px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.filter-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.filter-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: white;
+}
+
+.filter-input {
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e293b;
+  min-width: 150px;
+  transition: all 0.2s ease;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.filter-select {
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e293b;
+  min-width: 180px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkbox-label span {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.filter-stats {
+  margin-left: auto;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+  padding: 6px 14px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
 }
 
 .actions {
@@ -1705,7 +2887,8 @@ html, body, #app {
 }
 
 .documents-table,
-.partners-table {
+.partners-table,
+.admins-table {
   width: 100%;
   border-collapse: collapse;
   background: white;
@@ -1717,7 +2900,9 @@ html, body, #app {
 .documents-table th,
 .documents-table td,
 .partners-table th,
-.partners-table td {
+.partners-table td,
+.admins-table th,
+.admins-table td {
   padding: 14px 16px;
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
@@ -1725,7 +2910,8 @@ html, body, #app {
 }
 
 .documents-table th,
-.partners-table th {
+.partners-table th,
+.admins-table th {
   background: #f9fafb;
   font-weight: 600;
   color: #374151;
@@ -1736,17 +2922,20 @@ html, body, #app {
 }
 
 .documents-table tbody tr,
-.partners-table tbody tr {
+.partners-table tbody tr,
+.admins-table tbody tr {
   transition: background-color 0.2s ease;
 }
 
 .documents-table tbody tr:hover,
-.partners-table tbody tr:hover {
+.partners-table tbody tr:hover,
+.admins-table tbody tr:hover {
   background: #f9fafb;
 }
 
 .documents-table tbody tr:last-child td,
-.partners-table tbody tr:last-child td {
+.partners-table tbody tr:last-child td,
+.admins-table tbody tr:last-child td {
   border-bottom: none;
 }
 
@@ -1799,6 +2988,167 @@ html, body, #app {
 .status.inactive {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: inline-block;
+}
+
+.badge-superadmin {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.badge-admin {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+/* Action Badge Styles */
+.action-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-purple {
+  background: #e9d5ff;
+  color: #6b21a8;
+}
+
+.badge-teal {
+  background: #ccfbf1;
+  color: #115e59;
+}
+
+.badge-default {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* Audit Table Styles */
+.audit-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+}
+
+.audit-table th {
+  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 16px 18px;
+  text-align: left;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.audit-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 14px;
+  color: #374151;
+  vertical-align: middle;
+}
+
+.audit-table tbody tr {
+  transition: all 0.2s ease;
+  background: white;
+}
+
+.audit-table tbody tr:hover {
+  background: linear-gradient(90deg, #f9fafb 0%, #ffffff 100%);
+  transform: translateX(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.audit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Audit Cell Specific Styles */
+.audit-datetime {
+  font-weight: 500;
+  color: #6b7280;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.admin-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.audit-action {
+  min-width: 180px;
+}
+
+.audit-type {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.entity-name {
+  color: #1f2937;
+}
+
+.btn-details {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-details:hover {
+  background: #2563eb;
+}
+
+.no-details {
+  color: #d1d5db;
+  font-size: 13px;
 }
 
 .password-status.set {
@@ -2026,6 +3376,11 @@ html, body, #app {
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
 }
 
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
 /* Icons */
 
 
@@ -2044,6 +3399,33 @@ html, body, #app {
     align-items: stretch;
   }
   
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  
+  .filter-input,
+  .filter-select {
+    width: 100%;
+    min-width: unset;
+  }
+  
+  .filter-buttons {
+    flex-wrap: wrap;
+  }
+  
+  .filter-stats {
+    margin-left: 0;
+    text-align: center;
+  }
+  
   .actions {
     justify-content: stretch;
   }
@@ -2053,7 +3435,8 @@ html, body, #app {
   }
   
   .documents-table,
-  .partners-table {
+  .partners-table,
+  .admins-table {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
@@ -2133,18 +3516,21 @@ html, body, #app {
 }
 
 .documents-table tbody tr,
-.partners-table tbody tr {
+.partners-table tbody tr,
+.admins-table tbody tr {
   animation: fadeInScale 0.3s ease-out;
   animation-fill-mode: both;
 }
 
 .documents-table tbody tr:nth-child(odd),
-.partners-table tbody tr:nth-child(odd) {
+.partners-table tbody tr:nth-child(odd),
+.admins-table tbody tr:nth-child(odd) {
   animation-delay: 0.05s;
 }
 
 .documents-table tbody tr:nth-child(even),
-.partners-table tbody tr:nth-child(even) {
+.partners-table tbody tr:nth-child(even),
+.admins-table tbody tr:nth-child(even) {
   animation-delay: 0.1s;
 }
 
@@ -2942,6 +4328,114 @@ html, body, #app {
 .status-badge.unpublished {
   background: #fef3c7;
   color: #78350f;
+}
+
+/* Responsive Audit Table для мобильных устройств */
+@media screen and (max-width: 768px) {
+  .audit-table {
+    border-radius: 8px;
+  }
+
+  .audit-table thead {
+    display: none;
+  }
+
+  .audit-table tbody tr {
+    display: block;
+    margin-bottom: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .audit-table tbody tr:hover {
+    transform: none;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .audit-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f3f4f6;
+    text-align: right;
+  }
+
+  .audit-table td:last-child {
+    border-bottom: none;
+  }
+
+  .audit-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    margin-right: 16px;
+  }
+
+  .action-badge {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  .btn-details {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+}
+
+/* Audit Details Modal */
+.audit-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-row {
+  display: flex;
+  padding: 12px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #6b7280;
+  min-width: 150px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-value {
+  flex: 1;
+  color: #1f2937;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.detail-json {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: #374151;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  line-height: 1.6;
 }
 
 </style>

@@ -9,19 +9,24 @@ async function initializeDatabase() {
     // Подключаемся к базе данных
     await db.connect();
     
-    // Создаем администратора по умолчанию
-    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    // Создаем суперадминистратора из .env
+    const superadminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const superadminPassword = process.env.ADMIN_PASSWORD || 'admin123';
     
-    // Проверяем, существует ли уже администратор
-    const existingAdmin = await db.getAdminByUsername(adminUsername);
+    // Проверяем, существует ли уже суперадминистратор
+    const existingSuperadmin = await db.getAdminByUsername(superadminUsername);
     
-    if (!existingAdmin) {
-      const passwordHash = await bcrypt.hash(adminPassword, 12);
-      await db.createAdmin(adminUsername, passwordHash, 'admin@freedom-group.com');
-      console.log(`✅ Создан администратор: ${adminUsername}`);
+    if (!existingSuperadmin) {
+      const passwordHash = await bcrypt.hash(superadminPassword, 12);
+      await db.run(`
+        INSERT INTO admin (username, pswHash, email, role)
+        VALUES (?, ?, ?, 'superadmin')
+      `, [superadminUsername, passwordHash, 'superadmin@freedom-group.com']);
+      console.log(`✅ Создан суперадминистратор: ${superadminUsername}`);
     } else {
-      console.log(`ℹ️  Администратор ${adminUsername} уже существует`);
+      // Обновляем роль существующего админа на superadmin
+      await db.run(`UPDATE admin SET role = 'superadmin' WHERE username = ?`, [superadminUsername]);
+      console.log(`ℹ️  Суперадминистратор ${superadminUsername} уже существует`);
     }
     
     // Создаем тестовых партнеров для разработки

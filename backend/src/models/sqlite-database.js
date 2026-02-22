@@ -59,6 +59,7 @@ class Database {
           username TEXT UNIQUE NOT NULL,
           pswHash TEXT NOT NULL,
           email TEXT,
+          role TEXT DEFAULT 'admin' CHECK(role IN ('superadmin', 'admin')),
           lastLogin DATETIME,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -68,6 +69,8 @@ class Database {
           name TEXT NOT NULL,
           email TEXT UNIQUE NOT NULL,
           telegram TEXT,
+          birthDate DATE,
+          active INTEGER DEFAULT 1,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -234,6 +237,37 @@ class Database {
     );
   }
 
+  // Методы для управления админами (только для superadmin)
+  async getAllAdmins() {
+    return this.all('SELECT inc, username, email, role, lastLogin, createdAt FROM admin ORDER BY createdAt DESC');
+  }
+
+  async createAdmin(username, passwordHash, email, role = 'admin') {
+    const result = await this.run(`
+      INSERT INTO admin (username, pswHash, email, role)
+      VALUES (?, ?, ?, ?)
+    `, [username, passwordHash, email, role]);
+    return result.id;
+  }
+
+  async updateAdminPassword(adminId, passwordHash) {
+    return this.run(
+      'UPDATE admin SET pswHash = ? WHERE inc = ?',
+      [passwordHash, adminId]
+    );
+  }
+
+  async updateAdmin(adminId, username, email) {
+    return this.run(
+      'UPDATE admin SET username = ?, email = ? WHERE inc = ?',
+      [username, email, adminId]
+    );
+  }
+
+  async deleteAdmin(adminId) {
+    return this.run('DELETE FROM admin WHERE inc = ? AND role != ?', [adminId, 'superadmin']);
+  }
+
   async getPartnerAuth(login) {
     return this.get(`
       SELECT p.partnerId, p.name, p.email, pp.alias, pp.pswHash, pp.active, 
@@ -270,8 +304,10 @@ class Database {
       partner.Name = partner.name;
       partner.Email = partner.email;
       partner.Telegram = partner.telegram;
+      partner.BirthDate = partner.birthDate;
+      partner.Active = partner.active;
       partner.CreatedAt = partner.createdAt;
-      partner.IsActive = 1; // В SQLite нет IsActive, но добавляем для совместимости
+      partner.IsActive = partner.active; // Для совместимости с существующим кодом
     }
     return partner;
   }
@@ -365,7 +401,8 @@ class Database {
   async getAllPartners() {
     return this.all(`
       SELECT p.partnerId as Inc, p.name as Name, p.email as Email, p.telegram as Telegram, 
-             p.createdAt as CreatedAt, 1 as IsActive,
+             p.birthDate as BirthDate, p.active as Active, p.active as IsActive,
+             p.createdAt as CreatedAt,
              pp.alias as Alias, CASE WHEN pp.pswHash IS NOT NULL THEN 1 ELSE 0 END as PasswordSet, pp.lastVisit as LastVisit
       FROM partner p
       LEFT JOIN partpass pp ON p.partnerId = pp.partnerId
@@ -432,7 +469,7 @@ class Database {
   }
 
   // Метод для создания партнера
-  async createPartner({ name, email, telegram, alias, password }) {
+  async createPartner({ name, email, telegram, alias, password, birthDate, active = 1 }) {
     const transaction = await this.beginTransaction();
     
     try {
@@ -447,6 +484,7 @@ class Database {
         existingAlias = await this.get('SELECT alias FROM partpass WHERE alias = ?', [finalAlias]);
         counter++;
       }
+
       
       // Проверяем уникальность email
       const existingEmail = await this.get('SELECT email FROM partner WHERE email = ?', [email]);
@@ -456,9 +494,9 @@ class Database {
       
       // Создаем запись партнера
       const partnerResult = await this.run(`
-        INSERT INTO partner (name, email, telegram, createdAt)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      `, [name, email, telegram || null]);
+        INSERT INTO partner (name, email, telegram, birthDate, active, createdAt)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `, [name, email, telegram || null, birthDate || null, active ? 1 : 0]);
       
       const partnerId = partnerResult.id;
       
@@ -495,8 +533,45 @@ class Database {
     `, [partnerId, token, expireAt.toISOString()]);
   }
 
+  // Метод для получения токена сброса пароля
+  async getPasswordResetToken(token) {
+    const resetData = await this.get(`
+      SELECT 
+        prt.id,
+        prt.partnerId as PartnerId,
+        prt.token,
+        prt.expireAt,
+        prt.used,
+        p.email as Email,
+        p.name
+      FROM password_reset_tokens prt
+      INNER JOIN partner p ON prt.partnerId = p.partnerId
+      WHERE prt.token = ? AND prt.used = 0 AND datetime(prt.expireAt) > datetime('now')
+    `, [token]);
+    
+    return resetData;
+  }
+
+  // Метод для пометки токена как использованного
+  async markTokenAsUsed(token) {
+    return this.run(`
+      UPDATE password_reset_tokens 
+      SET used = 1 
+      WHERE token = ?
+    `, [token]);
+  }
+
+  // Метод для обновления пароля партнера
+  async updatePartnerPassword(partnerId, passwordHash) {
+    return this.run(`
+      UPDATE partpass 
+      SET pswHash = ?, active = 1 
+      WHERE partnerId = ?
+    `, [passwordHash, partnerId]);
+  }
+
   // Метод для обновления партнера
-  async updatePartner(partnerId, { name, email, telegram, alias, password }) {
+  async updatePartner(partnerId, { name, email, telegram, alias, password, birthDate, active = 1 }) {
     const transaction = await this.beginTransaction();
     
     try {
@@ -514,8 +589,8 @@ class Database {
       
       // Обновляем данные партнера
       await this.run(`
-        UPDATE partner SET name = ?, email = ?, telegram = ? WHERE partnerId = ?
-      `, [name, email, telegram || null, partnerId]);
+        UPDATE partner SET name = ?, email = ?, telegram = ?, birthDate = ?, active = ? WHERE partnerId = ?
+      `, [name, email, telegram || null, birthDate || null, active, partnerId]);
       
       // Обновляем алиас
       await this.run(`
@@ -578,6 +653,126 @@ class Database {
       WHERE c.partnerId = ?
       ORDER BY c.uploadedAt DESC
     `, [partnerId]);
+  }
+
+  // Методы для работы с audit log
+  async createAuditLog(logData) {
+    const {
+      adminId,
+      adminUsername,
+      action,
+      entityType,
+      entityId,
+      entityName,
+      details,
+      ipAddress,
+      userAgent
+    } = logData;
+    // Сохраняем лог в существующую таблицу `auditLog`.
+    // В поле `details` сохраняем полезную полезную нагрузку как JSON.
+    const payload = {
+      adminId,
+      adminUsername,
+      action,
+      entityType: entityType || null,
+      entityId: entityId || null,
+      entityName: entityName || null,
+      details: details || null,
+      ipAddress: ipAddress || null,
+      userAgent: userAgent || null
+    };
+
+    return this.run(
+      `INSERT INTO auditLog (userId, userType, action, details, ipAddress, userAgent) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        adminId,
+        'admin',
+        action,
+        JSON.stringify(payload),
+        ipAddress || null,
+        userAgent || null
+      ]
+    );
+  }
+
+  async getAuditLogs(filters = {}) {
+    // Берём строки из auditLog и присоединяем таблицу admin для получения имени админа
+    let query = `SELECT al.*, a.username as admin_username FROM auditLog al LEFT JOIN admin a ON a.inc = al.userId WHERE 1=1`;
+    const params = [];
+
+    if (filters.adminId) {
+      query += ' AND al.userId = ?';
+      params.push(filters.adminId);
+    }
+
+    if (filters.action) {
+      query += ' AND al.action = ?';
+      params.push(filters.action);
+    }
+
+    if (filters.dateFrom) {
+      query += ' AND al.createdAt >= ?';
+      params.push(filters.dateFrom);
+    }
+
+    if (filters.dateTo) {
+      query += ' AND al.createdAt <= ?';
+      params.push(filters.dateTo);
+    }
+
+    if (filters.search) {
+      query += ' AND (a.username LIKE ? OR al.action LIKE ? OR al.details LIKE ?)';
+      const searchPattern = `%${filters.search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    query += ' ORDER BY al.createdAt DESC';
+
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(filters.limit);
+    }
+
+    if (filters.offset) {
+      query += ' OFFSET ?';
+      params.push(filters.offset);
+    }
+
+    return this.all(query, params);
+  }
+
+  async getAuditLogsCount(filters = {}) {
+    let query = 'SELECT COUNT(*) as count FROM auditLog al LEFT JOIN admin a ON a.inc = al.userId WHERE 1=1';
+    const params = [];
+
+    if (filters.adminId) {
+      query += ' AND al.userId = ?';
+      params.push(filters.adminId);
+    }
+
+    if (filters.action) {
+      query += ' AND al.action = ?';
+      params.push(filters.action);
+    }
+
+    if (filters.dateFrom) {
+      query += ' AND al.createdAt >= ?';
+      params.push(filters.dateFrom);
+    }
+
+    if (filters.dateTo) {
+      query += ' AND al.createdAt <= ?';
+      params.push(filters.dateTo);
+    }
+
+    if (filters.search) {
+      query += ' AND (a.username LIKE ? OR al.action LIKE ? OR al.details LIKE ?)';
+      const searchPattern = `%${filters.search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    const result = await this.get(query, params);
+    return result ? result.count : 0;
   }
 
   // Методы для работы с транзакциями

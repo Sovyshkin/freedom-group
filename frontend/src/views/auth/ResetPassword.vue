@@ -4,14 +4,16 @@
       <div class="reset-card">
         <div class="logo">
           <h1>FREEDOM GROUP</h1>
-          <p>Восстановление пароля</p>
+          <p>{{ isFirstTimeSetup ? 'Установка пароля' : 'Восстановление пароля' }}</p>
         </div>
         
-        <div v-if="!tokenVerified && !loading" class="loading-state">
+        <!-- Loading state -->
+        <div v-if="loading && !tokenVerified && !tokenError" class="loading-state">
           <AppLoader />
           <p>Проверка токена...</p>
         </div>
         
+        <!-- Error state -->
         <div v-else-if="tokenError" class="error-state">
           <div class="error-icon">⚠️</div>
           <h3>Ошибка</h3>
@@ -19,18 +21,22 @@
           <router-link to="/" class="btn btn-primary">Вернуться к входу</router-link>
         </div>
         
+        <!-- Success state -->
         <div v-else-if="passwordResetSuccess" class="success-state">
           <div class="success-icon">✅</div>
-          <h3>Пароль успешно обновлен!</h3>
-          <p>Теперь вы можете войти в систему с новым паролем.</p>
-          <router-link to="/" class="btn btn-primary">Перейти к входу</router-link>
+          <h3>Пароль успешно установлен!</h3>
+          <p>Теперь вы можете войти в личный кабинет с вашим новым паролем.</p>
+          <router-link to="/" class="btn btn-primary">Войти в личный кабинет</router-link>
         </div>
         
-        <form v-else @submit.prevent="resetPassword" class="reset-form">
-          <h3>Установка нового пароля</h3>
+        <!-- Password form -->
+        <form v-else-if="tokenVerified" @submit.prevent="resetPassword" class="reset-form">
+          <h3>{{ isFirstTimeSetup ? 'Создайте пароль для входа' : 'Установка нового пароля' }}</h3>
           
           <div v-if="partnerInfo" class="partner-info">
-            <p>Установка пароля для: <strong>{{ partnerInfo.email }}</strong></p>
+            <div class="info-icon">👤</div>
+            <p class="info-text">{{ partnerInfo.email }}</p>
+            <p v-if="isFirstTimeSetup" class="info-hint">Придумайте надёжный пароль для доступа в личный кабинет</p>
           </div>
           
           <div class="form-group">
@@ -44,24 +50,29 @@
                 minlength="6"
                 placeholder="Введите новый пароль (минимум 6 символов)"
                 :class="{ error: errors.password }"
+                autocomplete="new-password"
               />
               <button 
                 type="button" 
                 @click="showPassword = !showPassword"
                 class="password-toggle"
+                aria-label="Показать пароль"
               >
                 {{ showPassword ? '🙈' : '👁️' }}
               </button>
             </div>
             <div v-if="errors.password" class="error-message">{{ errors.password }}</div>
-            <div class="password-strength">
+            <div v-if="formData.password" class="password-strength">
               <div class="strength-bar">
                 <div 
                   :class="['strength-fill', passwordStrength.class]"
                   :style="{ width: passwordStrength.width }"
                 ></div>
               </div>
-              <div class="strength-text">{{ passwordStrength.text }}</div>
+              <div class="strength-text">Надёжность: {{ passwordStrength.text }}</div>
+            </div>
+            <div v-else class="password-hint">
+              💡 Используйте минимум 6 символов. Для надёжности добавьте буквы, цифры и спецсимволы
             </div>
           </div>
           
@@ -75,16 +86,21 @@
                 required
                 placeholder="Повторите новый пароль"
                 :class="{ error: errors.confirmPassword }"
+                autocomplete="new-password"
               />
               <button 
                 type="button" 
                 @click="showConfirmPassword = !showConfirmPassword"
                 class="password-toggle"
+                aria-label="Показать пароль"
               >
                 {{ showConfirmPassword ? '🙈' : '👁️' }}
               </button>
             </div>
             <div v-if="errors.confirmPassword" class="error-message">{{ errors.confirmPassword }}</div>
+            <div v-else-if="formData.confirmPassword && formData.password === formData.confirmPassword" class="success-message">
+              ✓ Пароли совпадают
+            </div>
           </div>
           
           <div class="form-actions">
@@ -93,8 +109,8 @@
               :disabled="loading || !isFormValid"
               class="btn btn-primary btn-full"
             >
-              <AppLoader v-if="loading" size="small" />
-              {{ loading ? 'Установка пароля...' : 'Установить пароль' }}
+              <span v-if="loading" class="btn-loader">⏳</span>
+              {{ loading ? 'Установка пароля...' : (isFirstTimeSetup ? 'Создать пароль и войти' : 'Установить пароль') }}
             </button>
           </div>
           
@@ -112,14 +128,13 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import AppLoader from '@/components/AppLoader.vue'
 import AppNotifications from '@/components/AppNotifications.vue'
 import { useNotificationStore } from '@/stores/notifications'
 import api from '@/plugins/axios'
 
 const route = useRoute()
-const router = useRouter()
 const notificationStore = useNotificationStore()
 
 // Reactive data
@@ -128,6 +143,7 @@ const tokenVerified = ref(false)
 const tokenError = ref('')
 const passwordResetSuccess = ref(false)
 const partnerInfo = ref(null)
+const isFirstTimeSetup = ref(true) // По умолчанию считаем что это первая установка пароля
 
 const formData = ref({
   password: '',
@@ -144,7 +160,6 @@ const passwordStrength = computed(() => {
   if (!password) return { width: '0%', class: '', text: '' }
   
   let score = 0
-  let feedback = []
   
   // Length check
   if (password.length >= 6) score += 1
@@ -280,7 +295,7 @@ onMounted(() => {
 <style scoped>
 .reset-password-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -289,19 +304,21 @@ onMounted(() => {
 
 .container {
   width: 100%;
-  max-width: 400px;
+  max-width: 500px;
 }
 
 .reset-card {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e9ecef;
   overflow: hidden;
 }
 
 .logo {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #f8f9fa;
+  border-bottom: 2px solid #e9ecef;
+  color: #2c3e50;
   text-align: center;
   padding: 40px 20px;
 }
@@ -310,11 +327,12 @@ onMounted(() => {
   margin: 0 0 8px;
   font-size: 2rem;
   font-weight: 700;
+  color: #667eea;
 }
 
 .logo p {
   margin: 0;
-  opacity: 0.9;
+  color: #6c757d;
   font-size: 1.1rem;
 }
 
@@ -345,7 +363,7 @@ onMounted(() => {
 }
 
 .reset-form {
-  padding: 30px;
+  padding: 40px 30px;
 }
 
 .reset-form h3 {
@@ -353,21 +371,35 @@ onMounted(() => {
   color: #2c3e50;
   font-size: 1.5rem;
   text-align: center;
+  font-weight: 600;
 }
 
 .partner-info {
   background: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 24px;
+  border: 2px solid #dee2e6;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 28px;
   text-align: center;
 }
 
-.partner-info p {
+.partner-info .info-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.partner-info .info-text {
+  margin: 0 0 8px;
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.partner-info .info-hint {
   margin: 0;
   color: #6c757d;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .form-group {
@@ -420,6 +452,24 @@ onMounted(() => {
   color: #dc3545;
   font-size: 14px;
   margin-top: 4px;
+}
+
+.success-message {
+  color: #28a745;
+  font-size: 14px;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.password-hint {
+  color: #6c757d;
+  font-size: 13px;
+  margin-top: 6px;
+  line-height: 1.4;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
 }
 
 .password-strength {
@@ -480,11 +530,12 @@ onMounted(() => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #667eea;
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
+  background: #5568d3;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
@@ -498,6 +549,17 @@ onMounted(() => {
 
 .btn-full {
   width: 100%;
+}
+
+.btn-loader {
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .help-links {

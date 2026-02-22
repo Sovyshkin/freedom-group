@@ -64,10 +64,7 @@
 import { ref, reactive } from 'vue'
 import AppLoader from '@/components/AppLoader.vue'
 import AppNotifications from '@/components/AppNotifications.vue'
-import { useNotificationStore } from '@/stores/notifications'
 import api from '@/plugins/axios'
-
-const notificationStore = useNotificationStore()
 
 // Reactive data
 const loading = ref(false)

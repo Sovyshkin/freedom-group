@@ -140,7 +140,9 @@ router.get('/documents/:documentId', [
     if (fileBuffer) {
       try {
         const xlsx = require('xlsx');
-        const workbook = xlsx.read(fileBuffer);
+        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+        console.log(`📊 Excel файл содержит ${workbook.SheetNames.length} листов:`, workbook.SheetNames);
+        
         excelData = {
           sheets: []
         };
@@ -153,13 +155,17 @@ router.get('/documents/:documentId', [
             raw: false
           });
 
+          console.log(`  📄 Лист "${sheetName}": ${jsonData.length} строк`);
+
           excelData.sheets.push({
             name: sheetName,
             data: jsonData
           });
         });
+        
+        console.log(`✅ Успешно обработано ${excelData.sheets.length} листов`);
       } catch (parseError) {
-        console.error('Error parsing Excel file:', parseError);
+        console.error('❌ Error parsing Excel file:', parseError);
       }
     }
 

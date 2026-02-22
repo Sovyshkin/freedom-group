@@ -135,44 +135,72 @@ router.post('/admin/login', [
 
     const { username, password } = req.body;
 
-    // Получаем данные администратора
-    const admin = await db.getAdminByUsername(username);
-    
-    if (!admin) {
-      return res.status(401).json({
-        success: false,
-        message: 'Неверные учетные данные'
-      });
-    }
+    // Если логин совпадает с супер-админом из .env — требуем точное соответствие пароля из .env
+    const envAdmin = process.env.ADMIN_USERNAME;
+    const envAdminPassword = process.env.ADMIN_PASSWORD;
 
-    // Проверяем наличие хеша пароля
-    const passwordHash = admin.pswHash || admin.PswHash;
-    if (!passwordHash) {
-      console.error('❌ Хеш пароля не найден для пользователя:', username);
-      return res.status(500).json({
-        success: false,
-        message: 'Ошибка конфигурации пользователя'
-      });
-    }
+    let admin = null;
 
-    // Проверяем пароль
-    const isMatch = await bcrypt.compare(password, passwordHash);
-    
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Неверные учетные данные'
-      });
+    if (envAdmin && username === envAdmin) {
+      if (!envAdminPassword || password !== envAdminPassword) {
+        return res.status(401).json({ success: false, message: 'Неверные учетные данные' });
+      }
+
+      // Убедимся, что в БД есть запись об администраторе и что у неё роль superadmin
+      admin = await db.getAdminByUsername(username);
+      if (!admin) {
+        // Создаём запись суперадмина с ролью superadmin
+        const hash = await bcrypt.hash(envAdminPassword, 12);
+        const newId = await db.createAdmin(username, hash, null, 'superadmin');
+        admin = await db.getAdminByUsername(username);
+      } else if (admin.role !== 'superadmin') {
+        // Обновляем роль в БД на superadmin
+        await db.run('UPDATE admin SET role = ? WHERE inc = ?', ['superadmin', admin.inc]);
+        admin.role = 'superadmin';
+      }
+    } else {
+      // Обычная проверка по БД
+      admin = await db.getAdminByUsername(username);
+      
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: 'Неверные учетные данные'
+        });
+      }
+
+      // Проверяем наличие хеша пароля
+      const passwordHash = admin.pswHash || admin.PswHash;
+      if (!passwordHash) {
+        console.error('❌ Хеш пароля не найден для пользователя:', username);
+        return res.status(500).json({
+          success: false,
+          message: 'Ошибка конфигурации пользователя'
+        });
+      }
+
+      // Проверяем пароль
+      const isMatch = await bcrypt.compare(password, passwordHash);
+      
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: 'Неверные учетные данные'
+        });
+      }
     }
 
     // Обновляем время последнего входа
-    await db.updateAdminLastLogin(admin.inc);
+    if (admin && admin.inc) {
+      await db.updateAdminLastLogin(admin.inc);
+    }
 
-    // Генерируем токен
+    // Генерируем токен (включаем реальную роль из БД)
     const token = generateToken({
       adminId: admin.inc,
       username: admin.username,
-      role: 'admin'
+      role: 'admin',
+      adminRole: admin.role || 'admin' // superadmin или admin
     });
 
     res.json({
@@ -183,7 +211,8 @@ router.post('/admin/login', [
         id: admin.inc,
         username: admin.username,
         email: admin.email,
-        role: 'admin'
+        role: 'admin',
+        adminRole: admin.role || 'admin'
       }
     });
 
@@ -341,10 +370,24 @@ router.get('/verify', async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Формируем объект пользователя с полной информацией из токена
+    const userResponse = {
+      id: decoded.adminId || decoded.partnerId,
+      username: decoded.username,
+      alias: decoded.alias,
+      role: decoded.role
+    };
+    
+    // Добавляем adminRole если это админ
+    if (decoded.role === 'admin' && decoded.adminRole) {
+      userResponse.adminRole = decoded.adminRole;
+    }
+    
     res.json({
       success: true,
       message: 'Токен действителен',
-      user: decoded
+      user: userResponse
     });
   } catch (error) {
     res.status(401).json({ 
@@ -357,7 +400,7 @@ router.get('/verify', async (req, res) => {
 // @desc    Верификация токена
 // @route   GET /api/auth/verify  
 // @access  Private
-router.get('/verify', require('../middleware/auth').verifyToken, async (req, res) => {
+router.get('/verify-token', require('../middleware/auth').verifyToken, async (req, res) => {
   try {
     const { user } = req;
     
@@ -368,7 +411,8 @@ router.get('/verify', require('../middleware/auth').verifyToken, async (req, res
         id: user.adminId || user.partnerId,
         username: user.username,
         alias: user.alias,
-        role: user.role
+        role: user.role,
+        adminRole: user.adminRole || 'admin'
       }
     });
   } catch (error) {

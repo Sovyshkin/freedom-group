@@ -266,7 +266,7 @@ class EmailService {
                       </div>
                       
                       <div class="button-wrapper">
-                          <a href="${process.env.FRONTEND_URL || 'https://freedomgroup.online'}" class="button">
+                          <a href="${process.env.FRONTEND_URL || 'http://delta.freedomgroup.online/'}" class="button">
                               🔐 Перейти в личный кабинет
                           </a>
                       </div>
@@ -345,7 +345,7 @@ class EmailService {
                   <p>Для просмотра и загрузки документов перейдите в личный кабинет:</p>
                   
                   <p style="text-align: center;">
-                      <a href="${process.env.FRONTEND_URL}" class="button">Перейти в личный кабинет</a>
+                      <a href="${process.env.FRONTEND_URL || 'http://delta.freedomgroup.online/'}" class="button">Перейти в личный кабинет</a>
                   </p>
                   
                   <p><strong>Важная информация:</strong></p>

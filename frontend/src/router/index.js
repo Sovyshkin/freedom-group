@@ -14,6 +14,24 @@ const routes = [
     meta: { requiresGuest: true }
   },
   {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: () => import('@/views/auth/ForgotPassword.vue'),
+    meta: { requiresGuest: true }
+  },
+  {
+    path: '/reset-password',
+    name: 'reset-password',
+    component: () => import('@/views/auth/ResetPassword.vue'),
+    meta: { requiresGuest: true }
+  },
+  {
+    path: '/verify-email',
+    name: 'verify-email',
+    component: () => import('@/views/auth/EmailVerify.vue'),
+    meta: { requiresGuest: true }
+  },
+  {
     path: '/admin',
     name: 'admin',
     component: () => import('@/views/AdminDashboard.vue'),

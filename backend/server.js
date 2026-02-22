@@ -3,11 +3,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const authRoutes = require('./src/routes/auth');
 const partnerRoutes = require('./src/routes/partner');
 const adminRoutes = require('./src/routes/admin');
+const auditLogRoutes = require('./src/routes/auditLog');
 const { errorHandler, notFound } = require('./src/middleware/errorHandler');
 
 const app = express();
@@ -77,6 +79,7 @@ if (process.env.NODE_ENV === 'development') {
 app.use('/api/auth', authRoutes);
 app.use('/api/partner', partnerRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -103,6 +106,18 @@ async function startServer() {
     const telegramService = require('./src/services/telegramService');
     telegramService.setDatabase(db);
     console.log('✅ Telegram сервис подключен к базе данных');
+
+    // Инициализируем проверку дней рождения (каждый день в 9:00)
+    const birthdayService = require('./src/services/birthdayService');
+    cron.schedule('0 9 * * *', async () => {
+      console.log('🎂 Запуск проверки дней рождения...');
+      try {
+        await birthdayService.checkBirthdays();
+      } catch (error) {
+        console.error('❌ Ошибка при проверке дней рождения:', error);
+      }
+    });
+    console.log('✅ Планировщик проверки дней рождения запущен (каждый день в 9:00)');
 
     const HOST = process.env.HOST || '0.0.0.0';
     const LOCAL_IP = process.env.LOCAL_IP || '193.246.162.61';

@@ -26,6 +26,10 @@ const verifyToken = async (req, res, next) => {
 
 // Middleware для проверки роли партнера
 const verifyPartner = async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Токен не предоставлен' });
+  }
+
   if (req.user.role !== 'partner') {
     return res.status(403).json({ 
       success: false, 
@@ -55,6 +59,10 @@ const verifyPartner = async (req, res, next) => {
 
 // Middleware для проверки роли администратора
 const verifyAdmin = async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Токен не предоставлен' });
+  }
+
   if (req.user.role !== 'admin') {
     return res.status(403).json({ 
       success: false, 
@@ -69,6 +77,45 @@ const verifyAdmin = async (req, res, next) => {
       return res.status(403).json({ 
         success: false, 
         message: 'Администратор не найден' 
+      });
+    }
+
+    req.admin = admin;
+    next();
+  } catch (error) {
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Ошибка проверки администратора' 
+    });
+  }
+};
+
+// Middleware для проверки роли суперадминистратора
+const verifySuperAdmin = async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Токен не предоставлен' });
+  }
+
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Доступ запрещен: требуются права администратора' 
+    });
+  }
+
+  try {
+    const admin = await db.getAdminByUsername(req.user.username);
+    if (!admin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Администратор не найден' 
+      });
+    }
+
+    if (admin.role !== 'superadmin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Доступ запрещен: требуются права суперадминистратора' 
       });
     }
 
@@ -145,6 +192,7 @@ module.exports = {
   verifyToken,
   verifyPartner,
   verifyAdmin,
+  verifySuperAdmin,
   logAction,
   bruteForceProtection
 };

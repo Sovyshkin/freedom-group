@@ -1,5 +1,5 @@
 <template>
-  <div v-if="show" class="modal-overlay" @click.self="$emit('close')">
+  <div v-if="show" class="modal-overlay">
     <div class="modal modal-excel">
       <div class="modal-header">
         <div class="excel-header-info">
@@ -14,15 +14,25 @@
         
         <div v-else-if="excelData && excelData.sheets && excelData.sheets.length > 0" class="excel-container">
           <!-- Sheet tabs -->
-          <div class="excel-tabs">
-            <button 
-              v-for="(sheet, index) in excelData.sheets" 
-              :key="index"
-              @click="activeSheet = index"
-              :class="['excel-tab', { active: activeSheet === index }]"
-            >
-              {{ sheet.name }}
-            </button>
+          <div v-if="excelData.sheets.length > 1" class="excel-tabs">
+            <div class="sheets-info">
+              <span class="sheets-count">📄 {{ excelData.sheets.length }} {{ excelData.sheets.length === 1 ? 'лист' : excelData.sheets.length < 5 ? 'листа' : 'листов' }}</span>
+            </div>
+            <div class="tabs-container">
+              <button 
+                v-for="(sheet, index) in excelData.sheets" 
+                :key="index"
+                @click="activeSheet = index"
+                :class="['excel-tab', { active: activeSheet === index }]"
+              >
+                {{ sheet.name }}
+              </button>
+            </div>
+          </div>
+          
+          <!-- Sheet name header for single sheet -->
+          <div v-else class="excel-single-sheet-header">
+            <span class="sheet-name">{{ excelData.sheets[0]?.name || 'Лист 1' }}</span>
           </div>
           
           <!-- Excel table -->
@@ -108,6 +118,16 @@ const activeSheet = ref(0)
 watch(() => props.document, () => {
   activeSheet.value = 0
 })
+
+// Log excelData to debug
+watch(() => props.excelData, (newData) => {
+  if (newData) {
+    console.log('📊 ExcelViewer получил данные:', {
+      количествоЛистов: newData.sheets?.length || 0,
+      названияЛистов: newData.sheets?.map(s => s.name) || []
+    })
+  }
+}, { immediate: true })
 
 const getDisplayFileName = (doc) => {
   if (!doc) return ''
@@ -277,36 +297,89 @@ const getColumnLabel = (index) => {
 
 .excel-tabs {
   display: flex;
-  gap: 2px;
-  padding: 12px 20px 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px;
   background: #f3f4f6;
   border-bottom: 2px solid #e5e7eb;
+}
+
+.sheets-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sheets-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.tabs-container {
+  display: flex;
+  gap: 4px;
   overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 4px;
+}
+
+.tabs-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tabs-container::-webkit-scrollbar-track {
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+
+.tabs-container::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 3px;
+}
+
+.tabs-container::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+.excel-single-sheet-header {
+  padding: 12px 20px;
+  background: #f3f4f6;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.excel-single-sheet-header .sheet-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .excel-tab {
-  padding: 10px 20px;
-  background: #e5e7eb;
-  border: none;
-  border-radius: 8px 8px 0 0;
+  padding: 8px 16px;
+  background: #d1d5db;
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #6b7280;
+  color: #374151;
   transition: all 0.2s;
   white-space: nowrap;
+  min-width: fit-content;
 }
 
 .excel-tab:hover {
-  background: #d1d5db;
+  background: #9ca3af;
+  color: #111827;
+  border-color: #6b7280;
 }
 
 .excel-tab.active {
-  background: white;
-  color: #111827;
+  background: #2563eb;
+  color: white;
+  border-color: #1d4ed8;
   font-weight: 600;
-  border-bottom: 2px solid white;
-  margin-bottom: -2px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
 }
 
 .excel-table-wrapper {
