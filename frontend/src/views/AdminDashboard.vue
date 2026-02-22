@@ -470,7 +470,7 @@
                 <option value="">Все типы</option>
                 <option value="partner">Партнёр</option>
                 <option value="document">Документ</option>
-                <option value="claim">Претензия</option>
+                <option value="claim">Документ</option>
                 <option value="admin">Администратор</option>
               </select>
             </div>
@@ -2116,10 +2116,10 @@ const formatAction = (action) => {
     // Документы
     'upload_document': 'Загрузка документа',
     'auto_upload_files': 'Автозагрузка документов',
-    'publish_claims': 'Публикация претензий',
+    'publish_claims': 'Публикация документов',
     'publish_document': 'Публикация документа',
-    'unpublish_claims': 'Снятие публикации претензий',
-    'delete_claim': 'Удаление претензии',
+    'unpublish_claims': 'Снятие публикации документов',
+    'delete_claim': 'Удаление документов',
     'delete_document': 'Удаление документа',
     
     // Администраторы
